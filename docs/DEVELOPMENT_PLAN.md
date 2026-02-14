@@ -21,11 +21,11 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 ---
 
-## Phase 0: Project Scaffolding
+## Phase 0: Project Scaffolding ✅
 
 **Goal**: Compilable Rust project with modular structure, config loading, and logging.
 
-**Duration**: Day 1
+**Duration**: Day 1 — **Completed 2026-02-14**
 
 ### Tasks
 
@@ -135,11 +135,11 @@ mockall = "0.13"
 
 ---
 
-## Phase 1: Core Types and Platform Trait
+## Phase 1: Core Types and Platform Trait ✅
 
 **Goal**: Define the shared data model and platform abstraction so all subsequent modules have a stable interface.
 
-**Duration**: Day 1-2
+**Duration**: Day 1-2 — **Completed 2026-02-14** (76 unit tests)
 
 ### Tasks
 
@@ -220,17 +220,20 @@ pub struct AgentState {
 
 ---
 
-## Phase 2: Platform Integrations (Scanning)
+## Phase 2: Platform Integrations (Scanning) — IN PROGRESS
 
 **Goal**: Fetch live markets from ForecastEx, Metaculus, and Manifold. No betting yet — read-only.
 
 **Duration**: Day 2-4
 
+**Status**: 2B ✅ and 2C ✅ complete. 2A (ForecastEx/IB) and 2D (Market Router) remaining.
+
 **Platform exclusivity note (2026)**: IB ForecastEx is confirmed as the sole real-money execution platform accessible from Australia. The integrations below reflect this: ForecastEx is the primary scanner and execution target, while Metaculus and Manifold serve exclusively as read-only cross-reference and validation sources. No additional real-money platform integrations are planned or needed under current AU regulations. The `PredictionPlatform` trait abstraction is retained to allow future expansion if the regulatory landscape changes.
 
 ### Tasks
 
-#### 2A: IB ForecastEx Scanner
+#### 2A: IB ForecastEx Scanner ❌ NOT STARTED
+*Intentionally deferred — most complex integration. Will implement after pipeline is proven with Manifold/Metaculus.*
 - [ ] Implement IB TWS API connection (TCP socket to IB Gateway)
 - [ ] Authenticate with client ID and account
 - [ ] Request contract details for ForecastEx event contracts
@@ -247,21 +250,25 @@ pub struct AgentState {
 
 **Reliability priority**: Since ForecastEx is the sole execution venue, the IB connection must be treated as mission-critical infrastructure. Implement robust reconnection logic, connection health monitoring, and clear alerting when the IB link is degraded or lost.
 
-#### 2B: Metaculus Scanner
+#### 2B: Metaculus Scanner ✅ COMPLETE (2026-02-14)
 - [x] Implement REST API client (`https://www.metaculus.com/api2/`)
 - [x] Fetch active questions with community forecasts
 - [x] Parse community median/mean probability
 - [x] Map to `Market` struct (with `platform = "metaculus"`)
 - [ ] Implement matching logic: find Metaculus questions similar to ForecastEx markets (fuzzy text matching) *(deferred to 2D: Market Router)*
 
-#### 2C: Manifold Scanner
+*Implementation: `src/platforms/metaculus.rs` — 420 lines, 24 unit tests. Paginated scanning ordered by forecaster count, category classification via slugs + title keywords, graceful handling of hidden predictions (pre-`cp_reveal_time`).*
+
+#### 2C: Manifold Scanner ✅ COMPLETE (2026-02-14)
 - [x] Implement REST API client (`https://api.manifold.markets/v0/`)
 - [x] Fetch active binary markets with play-money probabilities
 - [x] Parse into `Market` struct (with `platform = "manifold"`)
 - [x] Filter for markets matching ForecastEx categories
 - [x] Track Mana prices as sentiment signals
 
-#### 2D: Market Router
+*Implementation: `src/platforms/manifold.rs` — full `PredictionPlatform` trait impl including bet placement, balance checking, liquidity checking. Multi-sort scanning with deduplication. 17 unit tests.*
+
+#### 2D: Market Router ❌ NOT STARTED
 - [ ] Aggregate markets from all enabled platforms
 - [ ] Match cross-platform markets (same underlying event) via fuzzy text matching
 - [ ] Attach Metaculus forecasts and Manifold prices as `CrossReferences`
