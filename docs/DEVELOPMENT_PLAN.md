@@ -29,14 +29,14 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 ### Tasks
 
-- [ ] Initialize Cargo workspace
-- [ ] Define module structure (see below)
-- [ ] Implement config loading from TOML (`config.toml`)
-- [ ] Set up structured logging with `tracing` + `tracing-subscriber`
-- [ ] Implement graceful shutdown (Ctrl+C handler)
-- [ ] Create `.env` template for secrets
-- [ ] Create `Dockerfile` for deployment
-- [ ] Write `README.md` with setup instructions
+- [x] Initialize Cargo workspace
+- [x] Define module structure (see below)
+- [x] Implement config loading from TOML (`config.toml`)
+- [x] Set up structured logging with `tracing` + `tracing-subscriber`
+- [x] Implement graceful shutdown (Ctrl+C handler)
+- [x] Create `.env` template for secrets
+- [x] Create `Dockerfile` for deployment
+- [x] Write `README.md` with setup instructions
 
 ### Module Structure
 
@@ -143,17 +143,17 @@ mockall = "0.13"
 
 ### Tasks
 
-- [ ] Define `Market` struct (id, question, platform, category, current_price, volume, deadline, etc.)
-- [ ] Define `Side` enum (Yes, No)
-- [ ] Define `TradeReceipt` struct (order_id, amount, price, fees, timestamp)
-- [ ] Define `Position` struct (market_id, side, size, entry_price, current_value)
-- [ ] Define `LiquidityInfo` struct (bid_depth, ask_depth, volume_24h)
-- [ ] Define `MarketCategory` enum (Weather, Sports, Economics, Politics, Culture, Other)
-- [ ] Define `PredictionPlatform` trait (see whitepaper §3.3)
-- [ ] Define `DataProvider` trait (see whitepaper §4.2)
-- [ ] Define `LlmEstimator` trait
-- [ ] Implement `Display` / `Debug` for all types
-- [ ] Write unit tests for type serialization/deserialization
+- [x] Define `Market` struct (id, question, platform, category, current_price, volume, deadline, etc.)
+- [x] Define `Side` enum (Yes, No)
+- [x] Define `TradeReceipt` struct (order_id, amount, price, fees, timestamp)
+- [x] Define `Position` struct (market_id, side, size, entry_price, current_value)
+- [x] Define `LiquidityInfo` struct (bid_depth, ask_depth, volume_24h)
+- [x] Define `MarketCategory` enum (Weather, Sports, Economics, Politics, Culture, Other)
+- [x] Define `PredictionPlatform` trait (see whitepaper §3.3)
+- [x] Define `DataProvider` trait (see whitepaper §4.2)
+- [x] Define `LlmEstimator` trait
+- [x] Implement `Display` / `Debug` for all types
+- [x] Write unit tests for type serialization/deserialization
 
 ### Key Type Definitions
 
@@ -248,18 +248,18 @@ pub struct AgentState {
 **Reliability priority**: Since ForecastEx is the sole execution venue, the IB connection must be treated as mission-critical infrastructure. Implement robust reconnection logic, connection health monitoring, and clear alerting when the IB link is degraded or lost.
 
 #### 2B: Metaculus Scanner
-- [ ] Implement REST API client (`https://www.metaculus.com/api2/`)
-- [ ] Fetch active questions with community forecasts
-- [ ] Parse community median/mean probability
-- [ ] Map to `Market` struct (with `platform = "metaculus"`)
-- [ ] Implement matching logic: find Metaculus questions similar to ForecastEx markets (fuzzy text matching)
+- [x] Implement REST API client (`https://www.metaculus.com/api2/`)
+- [x] Fetch active questions with community forecasts
+- [x] Parse community median/mean probability
+- [x] Map to `Market` struct (with `platform = "metaculus"`)
+- [ ] Implement matching logic: find Metaculus questions similar to ForecastEx markets (fuzzy text matching) *(deferred to 2D: Market Router)*
 
 #### 2C: Manifold Scanner
-- [ ] Implement REST API client (`https://api.manifold.markets/v0/`)
-- [ ] Fetch active binary markets with play-money probabilities
-- [ ] Parse into `Market` struct (with `platform = "manifold"`)
-- [ ] Filter for markets matching ForecastEx categories
-- [ ] Track Mana prices as sentiment signals
+- [x] Implement REST API client (`https://api.manifold.markets/v0/`)
+- [x] Fetch active binary markets with play-money probabilities
+- [x] Parse into `Market` struct (with `platform = "manifold"`)
+- [x] Filter for markets matching ForecastEx categories
+- [x] Track Mana prices as sentiment signals
 
 #### 2D: Market Router
 - [ ] Aggregate markets from all enabled platforms
