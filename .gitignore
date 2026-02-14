@@ -1,0 +1,4 @@
+/target
+oracle.db
+.env
+*.log

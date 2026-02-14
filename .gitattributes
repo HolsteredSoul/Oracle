@@ -1,0 +1,6 @@
+# Normalise line endings to LF in the repo, CRLF on Windows checkout
+* text=auto eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.exe binary
+*.db binary

@@ -1,0 +1,54 @@
+[agent]
+name = "ORACLE-001"
+scan_interval_secs = 600       # 10 minutes
+initial_bankroll = 100.0       # AUD
+survival_threshold = 0.0       # Die at $0
+currency = "AUD"
+
+[llm]
+provider = "anthropic"         # "anthropic" | "openai" | "grok"
+model = "claude-sonnet-4-20250514"
+api_key_env = "ANTHROPIC_API_KEY"
+max_tokens = 500
+batch_size = 10                # Markets per LLM call
+
+[platforms.forecastex]
+enabled = true
+ib_host = "127.0.0.1"
+ib_port = 4002                 # IB Gateway paper=4002, live=4001
+ib_client_id = 1
+account_id_env = "IB_ACCOUNT_ID"
+
+[platforms.metaculus]
+enabled = true                 # Read-only cross-reference
+
+[platforms.manifold]
+enabled = true                 # Play-money validation + sentiment signal
+
+[risk]
+mispricing_threshold = 0.08
+kelly_multiplier = 0.25
+max_bet_pct = 0.06
+max_exposure_pct = 0.60
+min_liquidity_contracts = 50
+
+[risk.category_thresholds]
+weather = 0.06
+sports = 0.08
+economics = 0.10
+politics = 0.12
+
+[data_sources]
+openweathermap_key_env = "OWM_API_KEY"
+bom_enabled = true
+api_sports_key_env = "API_SPORTS_KEY"
+fred_api_key_env = "FRED_API_KEY"
+coingecko = { enabled = true }
+
+[dashboard]
+enabled = true
+port = 8080
+
+[alerts]
+telegram_bot_token_env = "TG_BOT_TOKEN"
+telegram_chat_id_env = "TG_CHAT_ID"
