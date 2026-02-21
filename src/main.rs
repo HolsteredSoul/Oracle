@@ -1,14 +1,27 @@
 //! ORACLE — Autonomous Prediction Market AI Agent
 //!
 //! Entry point. Loads configuration, initialises structured logging,
-//! prints the startup banner, and enters the main idle/scan loop
-//! with graceful shutdown on Ctrl+C.
+//! restores state from disk (or creates fresh), and runs the main
+//! scan→estimate→bet loop with graceful shutdown.
 
 use anyhow::Result;
 use std::time::Duration;
-use tracing::info;
+use tracing::{error, info, warn};
 
 use oracle::config;
+use oracle::engine::accountant::{Accountant, CycleCosts, CycleReport};
+use oracle::engine::enricher::Enricher;
+use oracle::engine::executor::Executor;
+use oracle::engine::scanner::MarketRouter;
+use oracle::llm::anthropic::AnthropicClient;
+use oracle::llm::LlmEstimator;
+use oracle::platforms::manifold::ManifoldClient;
+use oracle::platforms::metaculus::MetaculusClient;
+use oracle::storage;
+use oracle::strategy::edge::{EdgeConfig, EdgeDetector};
+use oracle::strategy::kelly::{KellyCalculator, KellyConfig};
+use oracle::strategy::risk::{RiskConfig, RiskManager};
+use oracle::types::{AgentState, AgentStatus};
 
 const BANNER: &str = r#"
   ___  ____      _    ____ _     _____
@@ -18,7 +31,7 @@ const BANNER: &str = r#"
  \___/|_| \_\/_/   \_\____|_____|_____|
 
   Optimized Risk-Adjusted Cross-platform Leveraged Engine
-  v0.1.0 — Phase 0: Scaffolding
+  v0.1.0 — Autonomous Agent
 "#;
 
 #[tokio::main]
@@ -42,64 +55,266 @@ async fn main() -> Result<()> {
         "ORACLE starting up"
     );
 
-    info!(
-        llm_provider = %cfg.llm.provider,
-        llm_model = %cfg.llm.model,
-        "LLM configuration loaded"
-    );
+    // -- Restore or create state -----------------------------------------
 
-    info!(
-        forecastex_enabled = cfg.platforms.forecastex.enabled,
-        metaculus_enabled = cfg.platforms.metaculus.enabled,
-        manifold_enabled = cfg.platforms.manifold.enabled,
-        "Platform configuration loaded"
-    );
+    let mut state = match storage::load_state(None)? {
+        Some(s) => {
+            info!(
+                bankroll = s.bankroll,
+                cycles = s.cycle_count,
+                trades = s.trades_placed,
+                "Resumed from saved state"
+            );
+            s
+        }
+        None => {
+            let s = AgentState::new(cfg.agent.initial_bankroll);
+            info!(bankroll = s.bankroll, "Fresh start");
+            s
+        }
+    };
 
-    info!(
-        mispricing_threshold = cfg.risk.mispricing_threshold,
-        kelly_multiplier = cfg.risk.kelly_multiplier,
-        max_bet_pct = cfg.risk.max_bet_pct,
-        max_exposure_pct = cfg.risk.max_exposure_pct,
-        "Risk parameters loaded"
-    );
+    // -- Initialise components -------------------------------------------
 
-    // Main loop with graceful shutdown
+    // Platform clients
+    let manifold = if cfg.platforms.manifold.enabled {
+        Some(ManifoldClient::new(None)?)
+    } else {
+        None
+    };
+
+    let metaculus = if cfg.platforms.metaculus.enabled {
+        Some(MetaculusClient::new()?)
+    } else {
+        None
+    };
+
+    // Market router (takes ownership of platform clients)
+    let router = MarketRouter::new(manifold, metaculus);
+
+    // Data enricher
+    let fred_key = cfg.data_sources.fred_api_key_env.as_deref()
+        .and_then(|env| std::env::var(env).ok());
+    let news_key = std::env::var("NEWS_API_KEY").ok();
+    let sports_key = cfg.data_sources.api_sports_key_env.as_deref()
+        .and_then(|env| std::env::var(env).ok());
+    let mut enricher = Enricher::new(fred_key, news_key, sports_key)?;
+
+    // LLM estimator
+    let llm_api_key = std::env::var(&cfg.llm.api_key_env).unwrap_or_default();
+
+    let llm: Box<dyn LlmEstimator> = if llm_api_key.is_empty() {
+        warn!("No LLM API key configured — running in dry-run/scan-only mode");
+        // We'll skip estimation in the loop
+        Box::new(AnthropicClient::new("dummy".into(), Some(cfg.llm.model.clone()), None)?)
+    } else {
+        Box::new(AnthropicClient::new(llm_api_key, Some(cfg.llm.model.clone()), None)?)
+    };
+
+    // Strategy components
+    let edge_detector = EdgeDetector::new(EdgeConfig {
+        weather_threshold: *cfg.risk.category_thresholds.get("weather").unwrap_or(&0.06),
+        sports_threshold: *cfg.risk.category_thresholds.get("sports").unwrap_or(&0.08),
+        economics_threshold: *cfg.risk.category_thresholds.get("economics").unwrap_or(&0.10),
+        politics_threshold: *cfg.risk.category_thresholds.get("politics").unwrap_or(&0.12),
+        ..EdgeConfig::default()
+    });
+
+    let kelly = KellyCalculator::new(KellyConfig {
+        multiplier: cfg.risk.kelly_multiplier,
+        max_bet_pct: cfg.risk.max_bet_pct,
+        ..KellyConfig::default()
+    });
+
+    let mut risk_manager = RiskManager::new(RiskConfig {
+        max_exposure_pct: cfg.risk.max_exposure_pct,
+        ..RiskConfig::default()
+    });
+
+    // Executor (dry-run until IB ForecastEx is integrated in Phase 2A)
+    // Manifold execution requires a separate client with API key
+    let executor = Executor::new(None, true);
+
+    // -- Main loop -------------------------------------------------------
+
     let scan_interval = Duration::from_secs(cfg.agent.scan_interval_secs);
     let mut interval = tokio::time::interval(scan_interval);
     let shutdown = tokio::signal::ctrl_c();
     tokio::pin!(shutdown);
 
-    info!("Entering main loop (interval: {}s). Press Ctrl+C to stop.", cfg.agent.scan_interval_secs);
+    info!(
+        interval_secs = cfg.agent.scan_interval_secs,
+        "Entering main loop. Press Ctrl+C to stop."
+    );
 
     loop {
         tokio::select! {
             _ = interval.tick() => {
-                // Phase 0: idle heartbeat. Real scan/estimate/bet logic comes in later phases.
-                info!(cycle = "heartbeat", "Cycle tick — no active strategy yet (Phase 0)");
+                if !state.is_alive() {
+                    info!("Agent is dead. Shutting down.");
+                    break;
+                }
+
+                match run_cycle(
+                    &router, &mut enricher, &*llm, &edge_detector,
+                    &kelly, &mut risk_manager, &executor, &mut state,
+                ).await {
+                    Ok(report) => {
+                        log_cycle_report(&report);
+                        // Persist state after each cycle
+                        if let Err(e) = storage::save_state(&state, None) {
+                            error!(error = %e, "Failed to save state");
+                        }
+                        if state.status == AgentStatus::Died {
+                            info!("Agent died. Final bankroll: ${:.2}", state.bankroll);
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Cycle failed — continuing to next");
+                        state.cycle_count += 1;
+                    }
+                }
             }
             _ = &mut shutdown => {
-                info!("Shutdown signal received. Saving state and exiting gracefully...");
-                // TODO (Phase 6): persist AgentState to SQLite before exiting
+                info!("Shutdown signal received.");
                 break;
             }
         }
     }
 
-    info!("ORACLE shut down cleanly.");
+    // Save final state
+    storage::save_state(&state, None)?;
+    info!(
+        bankroll = format!("${:.2}", state.bankroll),
+        cycles = state.cycle_count,
+        trades = state.trades_placed,
+        pnl = format!("${:.2}", state.total_pnl),
+        "ORACLE shut down cleanly."
+    );
+
     Ok(())
 }
 
+/// Run a single scan→enrich→estimate→edge→size→risk→execute cycle.
+async fn run_cycle(
+    router: &MarketRouter,
+    enricher: &mut Enricher,
+    llm: &dyn LlmEstimator,
+    edge_detector: &EdgeDetector,
+    kelly: &KellyCalculator,
+    risk_manager: &mut RiskManager,
+    executor: &Executor,
+    state: &mut AgentState,
+) -> Result<CycleReport> {
+    info!(cycle = state.cycle_count + 1, "Starting cycle");
+
+    // 1. Scan markets
+    let markets = router.scan_all().await?;
+    let markets_scanned = markets.len();
+    info!(count = markets_scanned, "Markets scanned");
+
+    if markets.is_empty() {
+        let costs = CycleCosts {
+            data_cost: enricher.total_cost(),
+            ..Default::default()
+        };
+        let exec = oracle::engine::executor::ExecutionReport {
+            executed: Vec::new(),
+            failed: Vec::new(),
+            total_committed: 0.0,
+            total_commission: 0.0,
+        };
+        let mut report = Accountant::reconcile(state, &exec, &costs);
+        report.markets_scanned = markets_scanned;
+        return Ok(report);
+    }
+
+    // 2. Enrich with data
+    let enriched = enricher.enrich_batch(&markets).await?;
+
+    // 3. LLM estimation
+    let estimates: Vec<_> = if llm.model_name() != "dummy" {
+        let market_contexts: Vec<_> = enriched.iter()
+            .map(|(m, c)| (m.clone(), c.clone()))
+            .collect();
+        let ests = llm.batch_estimate(&market_contexts).await?;
+        enriched.iter().zip(ests).map(|((m, _), e)| (m.clone(), e)).collect()
+    } else {
+        Vec::new() // No LLM key — skip estimation
+    };
+
+    // 4. Edge detection
+    let edges = edge_detector.find_edges(&estimates);
+    let edges_found = edges.len();
+    info!(edges = edges_found, "Edges detected");
+
+    // 5. Kelly sizing + risk check
+    risk_manager.reset_cycle();
+    let mut approved_bets = Vec::new();
+
+    for edge in &edges {
+        if let Some(sized) = kelly.size_bet(edge, state.bankroll) {
+            match risk_manager.approve(&sized, state) {
+                Ok(adjusted_amount) => {
+                    let mut bet = sized;
+                    bet.bet_amount = adjusted_amount;
+                    risk_manager.record_approval(&bet, adjusted_amount);
+                    approved_bets.push(bet);
+                }
+                Err(reason) => {
+                    info!(
+                        market_id = %edge.market.id,
+                        reason = %reason,
+                        "Bet rejected by risk manager"
+                    );
+                }
+            }
+        }
+    }
+
+    info!(approved = approved_bets.len(), "Bets approved");
+
+    // 6. Execute
+    let execution = executor.execute_batch(&approved_bets).await?;
+
+    // 7. Reconcile
+    let costs = CycleCosts {
+        llm_cost: estimates.iter().map(|(_, e)| e.cost).sum(),
+        data_cost: enricher.total_cost(),
+        ..Default::default()
+    };
+
+    let mut report = Accountant::reconcile(state, &execution, &costs);
+    report.markets_scanned = markets_scanned;
+    report.edges_found = edges_found;
+
+    Ok(report)
+}
+
+/// Log a human-readable cycle summary.
+fn log_cycle_report(report: &CycleReport) {
+    info!(
+        cycle = report.cycle_number,
+        scanned = report.markets_scanned,
+        edges = report.edges_found,
+        bets = report.bets_placed,
+        failed = report.bets_failed,
+        committed = format!("${:.2}", report.total_committed),
+        costs = format!("${:.4}", report.cycle_costs.total()),
+        bankroll = format!("${:.2}", report.bankroll_after),
+        status = ?report.status,
+        "Cycle complete"
+    );
+}
+
 /// Initialise the `tracing` subscriber.
-///
-/// - In development (RUST_LOG set), uses human-readable pretty format.
-/// - In production, uses structured JSON logging to stdout.
 fn init_logging(cfg: &config::AppConfig) {
     use tracing_subscriber::{fmt, EnvFilter};
 
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("oracle=info"));
 
-    // Check if the user wants JSON logging (production)
     let json_logging = std::env::var("ORACLE_LOG_JSON").is_ok();
 
     if json_logging {
@@ -108,8 +323,6 @@ fn init_logging(cfg: &config::AppConfig) {
             .with_env_filter(env_filter)
             .with_target(true)
             .with_thread_ids(true)
-            .with_file(true)
-            .with_line_number(true)
             .init();
     } else {
         fmt()
@@ -118,5 +331,5 @@ fn init_logging(cfg: &config::AppConfig) {
             .init();
     }
 
-    let _ = cfg; // cfg reserved for future log-config options
+    let _ = cfg;
 }
