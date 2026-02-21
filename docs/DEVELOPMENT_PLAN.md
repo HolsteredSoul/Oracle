@@ -226,7 +226,7 @@ pub struct AgentState {
 
 **Duration**: Day 2-4
 
-**Status**: 2B ✅ and 2C ✅ complete. 2A (ForecastEx/IB) and 2D (Market Router) remaining.
+**Status**: 2B ✅, 2C ✅, and 2D ✅ complete. 2A (ForecastEx/IB) remaining.
 
 **Platform exclusivity note (2026)**: IB ForecastEx is confirmed as the sole real-money execution platform accessible from Australia. The integrations below reflect this: ForecastEx is the primary scanner and execution target, while Metaculus and Manifold serve exclusively as read-only cross-reference and validation sources. No additional real-money platform integrations are planned or needed under current AU regulations. The `PredictionPlatform` trait abstraction is retained to allow future expansion if the regulatory landscape changes.
 
@@ -268,12 +268,14 @@ pub struct AgentState {
 
 *Implementation: `src/platforms/manifold.rs` — full `PredictionPlatform` trait impl including bet placement, balance checking, liquidity checking. Multi-sort scanning with deduplication. 17 unit tests.*
 
-#### 2D: Market Router ❌ NOT STARTED
-- [ ] Aggregate markets from all enabled platforms
-- [ ] Match cross-platform markets (same underlying event) via fuzzy text matching
-- [ ] Attach Metaculus forecasts and Manifold prices as `CrossReferences`
-- [ ] Sort by category, volume, deadline
-- [ ] Filter out markets below liquidity thresholds
+#### 2D: Market Router ✅ COMPLETE (2026-02-17)
+- [x] Aggregate markets from all enabled platforms
+- [x] Match cross-platform markets (same underlying event) via fuzzy text matching
+- [x] Attach Metaculus forecasts and Manifold prices as `CrossReferences`
+- [x] Sort by category, volume, deadline
+- [x] Filter out markets below liquidity thresholds
+
+*Implementation: `src/engine/scanner.rs` — MarketRouter with concurrent platform fetching, word-overlap fuzzy matching (Jaccard + containment), category pre-filtering, priority scoring (cross-refs, liquidity, centrality). 20 unit tests.*
 
 ### Testing
 
@@ -290,45 +292,57 @@ pub struct AgentState {
 
 ---
 
-## Phase 3: Data Enrichment Pipeline
+## Phase 3: Data Enrichment Pipeline ✅
 
 **Goal**: For each candidate market, fetch domain-specific real-time data to inform LLM estimates.
 
-**Duration**: Day 4-6
+**Duration**: Day 4-6 — **Completed 2026-02-21** (40 unit tests across providers + enricher)
 
 **Cost efficiency note**: Given ForecastEx's limited market catalog (~50-200 active markets), maximizing the informational edge extracted from each market is critical. Aggressive caching and data reuse across markets sharing the same category or underlying data (e.g., multiple weather markets using the same BOM/NOAA data) are essential to both improving estimate quality and reducing API costs.
 
 ### Tasks
 
-#### 3A: Weather Data Provider
-- [ ] BOM API integration (Australian weather data, forecasts)
-- [ ] OpenWeatherMap API integration (global current + 5-day forecast)
-- [ ] NOAA API integration (US-specific weather data for US-centric markets)
-- [ ] Parse into `DataContext` struct
-- [ ] Keyword extraction from market questions to determine relevant location/metric
+#### 3A: Weather Data Provider ✅ COMPLETE
+- [x] Open-Meteo API integration (free, no key required — global current + 7-day forecast)
+- [x] Parse into `DataContext` struct
+- [x] Keyword extraction from market questions to determine relevant location/metric (14 known locations: AU cities, US cities, London, Tokyo)
 
-#### 3B: Sports Data Provider
-- [ ] API-Sports integration (fixtures, injuries, standings)
-- [ ] Parse team/player data relevant to market questions
-- [ ] Map sport + team from market question text
+*Implementation: `src/data/weather.rs` — Open-Meteo (free) instead of BOM/OWM/NOAA. Covers global weather with zero API cost. 7 unit tests.*
 
-#### 3C: Economics Data Provider
-- [ ] FRED API integration (US CPI, employment, GDP, Fed rates)
-- [ ] RBA data integration (AU cash rate, inflation)
-- [ ] ABS data integration (AU employment, GDP)
-- [ ] Parse macro indicators and forecasts relevant to ForecastEx economics markets
+#### 3B: Sports Data Provider ✅ COMPLETE
+- [x] Keyword-based sport/league extraction (12 sports: NBA, NFL, MLB, NHL, EPL, Tennis, F1, UFC, Cricket, AFL, NRL, Olympics)
+- [x] Team name extraction from question text
+- [x] Parse into `DataContext` with cross-reference signals
+- [ ] Full API-Sports integration *(deferred — free tier only 100 req/day, insufficient for scanning)*
 
-#### 3D: News/Sentiment Provider
-- [ ] NewsAPI integration for breaking news
-- [ ] Basic sentiment scoring (positive/negative keyword count)
-- [ ] Rate limiting and caching (news doesn't change per-minute)
+*Implementation: `src/data/sports.rs` — keyword extraction MVP. Full API integration deferred until needed. 7 unit tests.*
 
-#### 3E: Enrichment Orchestrator
-- [ ] Route market to appropriate data providers based on `MarketCategory`
-- [ ] Aggregate data contexts from multiple providers
-- [ ] Cache responses (TTL-based) to reduce API costs
-- [ ] Track and accumulate data API costs
-- [ ] Implement aggressive cross-market data sharing (e.g., one BOM fetch serves all AU weather markets in the same cycle)
+#### 3C: Economics Data Provider ✅ COMPLETE
+- [x] FRED API integration (CPI, unemployment, GDP, Fed funds, yield curve, S&P 500, housing, crypto, trade — 9 keyword groups mapping to 20+ FRED series)
+- [x] Keyword-only fallback when no API key configured
+- [x] Parse macro indicators into `DataContext`
+- [ ] RBA data integration *(deferred — most ForecastEx markets are US-centric)*
+- [ ] ABS data integration *(deferred)*
+
+*Implementation: `src/data/economics.rs` — FRED primary source. Free API. 6 unit tests.*
+
+#### 3D: News/Sentiment Provider ✅ COMPLETE
+- [x] NewsAPI integration for breaking news (with keyword-only fallback)
+- [x] Basic sentiment scoring (positive/negative keyword count, 18+19 word lists)
+- [x] Topic classification (9 topics: US Politics, Elections, Geopolitics, China, AI/Tech, Climate, Health, Entertainment, Space)
+- [x] Search query extraction from market questions
+
+*Implementation: `src/data/news.rs` — Covers Politics, Culture, and Other categories. 11 unit tests.*
+
+#### 3E: Enrichment Orchestrator ✅ COMPLETE
+- [x] Route market to appropriate data providers based on `MarketCategory`
+- [x] Cache responses (TTL-based: 60min weather, 30min econ/sports, 15min news)
+- [x] Track and accumulate data API costs
+- [x] Cross-market data sharing via keyword-based cache keys (same topic = shared fetch)
+- [x] Graceful degradation (failed enrichment falls back to empty context)
+- [x] Cache hit rate monitoring
+
+*Implementation: `src/engine/enricher.rs` — Category-routed orchestrator with in-memory TTL cache. 9 unit tests.*
 
 ### Data Context Structure
 

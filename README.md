@@ -72,10 +72,10 @@ oracle/
 │   │   └── manifold.rs     # Manifold (play-money)
 │   ├── data/               # Data enrichment providers
 │   │   ├── mod.rs          # DataProvider trait
-│   │   ├── weather.rs      # BOM / OpenWeatherMap / NOAA
-│   │   ├── sports.rs       # API-Sports
-│   │   ├── economics.rs    # FRED / RBA / ABS
-│   │   └── news.rs         # NewsAPI / RSS
+│   │   ├── weather.rs      # Open-Meteo (free, global)
+│   │   ├── sports.rs       # Keyword extraction + API-Sports
+│   │   ├── economics.rs    # FRED (US macro indicators)
+│   │   └── news.rs         # NewsAPI + sentiment scoring
 │   ├── llm/                # LLM integration
 │   │   ├── mod.rs          # LlmEstimator trait + prompt builder
 │   │   ├── anthropic.rs    # Claude
@@ -107,6 +107,25 @@ oracle/
         ├── kelly_tests.rs
         └── edge_tests.rs
 ```
+
+## Development Status
+
+| Phase | Description | Status | Tests |
+|-------|-------------|--------|-------|
+| 0 | Project Scaffolding | ✅ Complete | — |
+| 1 | Core Types & Platform Trait | ✅ Complete | 59 |
+| 2A | IB ForecastEx Scanner | ❌ Deferred | — |
+| 2B | Metaculus Scanner | ✅ Complete | 24 |
+| 2C | Manifold Scanner | ✅ Complete | 17 |
+| 2D | Market Router | ✅ Complete | 20 |
+| 3 | Data Enrichment Pipeline | ✅ Complete | 40 |
+| 4 | LLM Integration | ⭕ Next | — |
+| 5 | Strategy Engine | — | — |
+| 6 | Execution & Survival Loop | — | — |
+| 7 | Dashboard & Monitoring | — | — |
+| 8 | Calibration & Backtesting | — | — |
+
+**Total tests passing: 160**
 
 ## Documentation
 
