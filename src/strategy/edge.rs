@@ -77,6 +77,11 @@ impl EdgeDetector {
         Self { config }
     }
 
+    /// Access the edge configuration.
+    pub fn config(&self) -> &EdgeConfig {
+        &self.config
+    }
+
     /// Find all markets with actionable edges.
     pub fn find_edges(&self, estimates: &[(Market, Estimate)]) -> Vec<Edge> {
         let mut edges = Vec::new();

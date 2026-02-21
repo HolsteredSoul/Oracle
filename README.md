@@ -1,4 +1,4 @@
-# ORACLE — Autonomous Prediction Market AI Agent
+﻿# ORACLE — Autonomous Prediction Market AI Agent
 
 **O**ptimized **R**isk-**A**djusted **C**ross-platform **L**everaged **E**ngine
 
@@ -122,10 +122,10 @@ oracle/
 | 4 | LLM Integration | ✅ Complete | 21 |
 | 5 | Strategy Engine | ✅ Complete | 32 |
 | 6 | Execution & Survival Loop | ✅ Complete | 16 |
-| 7 | Dashboard & Monitoring | ⭕ Next | — |
-| 8 | Calibration & Backtesting | — | — |
+| 7 | Dashboard & Monitoring | ✅ Complete | 18 |
+| 8 | Calibration & Backtesting | ✅ Complete | 19 |
 
-**Total tests passing: 229**
+**Total tests passing: 266**
 
 ## Documentation
 

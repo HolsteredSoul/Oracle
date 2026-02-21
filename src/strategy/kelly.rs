@@ -59,6 +59,11 @@ impl KellyCalculator {
         Self { config }
     }
 
+    /// Access the Kelly configuration.
+    pub fn config(&self) -> &KellyConfig {
+        &self.config
+    }
+
     /// Size a bet for a detected edge using Kelly criterion.
     ///
     /// Kelly formula: f* = (bp - q) / b

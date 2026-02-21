@@ -1,14 +1,259 @@
-<!-- Dashboard template placeholder -->
-<!-- TODO (Phase 7): Single-page HTML dashboard with Chart.js -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ORACLE Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        :root {
+            --bg: #0a0a0f;
+            --surface: #12121a;
+            --border: #1e1e2e;
+            --text: #e0e0e0;
+            --dim: #888;
+            --green: #00e676;
+            --red: #ff5252;
+            --orange: #ffab40;
+            --blue: #448aff;
+            --purple: #b388ff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .header h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 2px;
+        }
+        .header h1 span { color: var(--orange); }
+        .status-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 1px;
+        }
+        .status-alive { background: rgba(0,230,118,0.15); color: var(--green); border: 1px solid var(--green); }
+        .status-died { background: rgba(255,82,82,0.15); color: var(--red); border: 1px solid var(--red); }
+        .status-paused { background: rgba(255,171,64,0.15); color: var(--orange); border: 1px solid var(--orange); }
+        .refresh-info { color: var(--dim); font-size: 12px; }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            padding: 16px 24px;
+        }
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .card-label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .card-value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+        .card-sub { color: var(--dim); font-size: 12px; margin-top: 4px; }
+        .positive { color: var(--green); }
+        .negative { color: var(--red); }
+
+        .chart-section {
+            padding: 0 24px 16px;
+        }
+        .chart-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .chart-card h3 { font-size: 14px; color: var(--dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .chart-container { position: relative; height: 250px; }
+
+        .tables-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            padding: 0 24px 24px;
+        }
+        @media (max-width: 900px) {
+            .tables-grid { grid-template-columns: 1fr; }
+        }
+        .table-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+        }
+        .table-card h3 { font-size: 14px; color: var(--dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; color: var(--dim); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+        td { padding: 6px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+        tr:hover td { background: rgba(255,255,255,0.03); }
+        .empty-msg { color: var(--dim); font-style: italic; padding: 16px 0; }
+    </style>
 </head>
 <body>
-    <h1>ORACLE Dashboard</h1>
-    <p>Phase 7 — Coming soon.</p>
+    <div class="header">
+        <h1><span>ORACLE</span> Dashboard</h1>
+        <div style="display:flex; align-items:center; gap:12px;">
+            <span id="status-badge" class="status-badge status-alive">LOADING...</span>
+            <span class="refresh-info">Auto-refresh: <span id="countdown">30</span>s</span>
+        </div>
+    </div>
+
+    <div class="grid" id="stats-grid">
+        <div class="card"><div class="card-label">Bankroll</div><div class="card-value" id="bankroll">$—</div><div class="card-sub" id="bankroll-sub"></div></div>
+        <div class="card"><div class="card-label">P&L</div><div class="card-value" id="pnl">$—</div><div class="card-sub" id="pnl-sub"></div></div>
+        <div class="card"><div class="card-label">Win Rate</div><div class="card-value" id="winrate">—%</div><div class="card-sub" id="winrate-sub"></div></div>
+        <div class="card"><div class="card-label">Trades</div><div class="card-value" id="trades">—</div><div class="card-sub" id="trades-sub"></div></div>
+        <div class="card"><div class="card-label">Cycles</div><div class="card-value" id="cycles">—</div><div class="card-sub" id="cycles-sub"></div></div>
+        <div class="card"><div class="card-label">Total Costs</div><div class="card-value" id="costs">$—</div><div class="card-sub" id="costs-sub"></div></div>
+    </div>
+
+    <div class="chart-section">
+        <div class="chart-card">
+            <h3>Balance History</h3>
+            <div class="chart-container"><canvas id="balanceChart"></canvas></div>
+        </div>
+    </div>
+
+    <div class="tables-grid">
+        <div class="table-card">
+            <h3>Recent Cycles</h3>
+            <table>
+                <thead><tr><th>#</th><th>Scanned</th><th>Edges</th><th>Bets</th><th>Cost</th><th>Balance</th></tr></thead>
+                <tbody id="cycles-table"><tr><td colspan="6" class="empty-msg">No cycles yet</td></tr></tbody>
+            </table>
+        </div>
+        <div class="table-card">
+            <h3>Recent Trades</h3>
+            <table>
+                <thead><tr><th>Market</th><th>Side</th><th>Amount</th><th>Edge</th><th>Conf</th></tr></thead>
+                <tbody id="trades-table"><tr><td colspan="5" class="empty-msg">No trades yet</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API = window.location.origin;
+        let balanceChart = null;
+        let countdownVal = 30;
+
+        // Balance chart
+        function initChart() {
+            const ctx = document.getElementById('balanceChart').getContext('2d');
+            balanceChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: [], datasets: [{ label: 'Bankroll ($)', data: [], borderColor: '#ffab40', backgroundColor: 'rgba(255,171,64,0.08)', fill: true, tension: 0.3, pointRadius: 2 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#1e1e2e' } },
+                        y: { ticks: { color: '#888', callback: v => '$'+v }, grid: { color: '#1e1e2e' } }
+                    }
+                }
+            });
+        }
+
+        function updateChart(data) {
+            if (!balanceChart) return;
+            balanceChart.data.labels = data.map(p => {
+                const d = new Date(p.timestamp);
+                return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+            });
+            balanceChart.data.datasets[0].data = data.map(p => p.bankroll);
+            balanceChart.update('none');
+        }
+
+        // Fetch and update
+        async function fetchData() {
+            try {
+                const [statusR, cyclesR, historyR, tradesR] = await Promise.all([
+                    fetch(API+'/api/status').then(r=>r.json()),
+                    fetch(API+'/api/cycles').then(r=>r.json()),
+                    fetch(API+'/api/balance-history').then(r=>r.json()),
+                    fetch(API+'/api/trades').then(r=>r.json()),
+                ]);
+                updateStatus(statusR);
+                updateCycles(cyclesR);
+                updateChart(historyR);
+                updateTrades(tradesR);
+            } catch(e) {
+                console.error('Fetch error:', e);
+            }
+        }
+
+        function updateStatus(s) {
+            const badge = document.getElementById('status-badge');
+            if (s.status.includes('ALIVE')) { badge.className = 'status-badge status-alive'; badge.textContent = 'ALIVE'; }
+            else if (s.status.includes('DIED')) { badge.className = 'status-badge status-died'; badge.textContent = 'DIED'; }
+            else { badge.className = 'status-badge status-paused'; badge.textContent = 'PAUSED'; }
+
+            document.getElementById('bankroll').textContent = '$' + s.bankroll.toFixed(2);
+            document.getElementById('bankroll-sub').textContent = 'Peak: $' + s.peak_bankroll.toFixed(2);
+
+            const pnlEl = document.getElementById('pnl');
+            pnlEl.textContent = (s.total_pnl >= 0 ? '+$' : '-$') + Math.abs(s.total_pnl).toFixed(2);
+            pnlEl.className = 'card-value ' + (s.total_pnl >= 0 ? 'positive' : 'negative');
+
+            document.getElementById('winrate').textContent = (s.win_rate * 100).toFixed(1) + '%';
+            document.getElementById('winrate-sub').textContent = s.trades_won + 'W / ' + s.trades_lost + 'L';
+
+            document.getElementById('trades').textContent = s.trades_placed;
+            const hrs = Math.floor(s.uptime_secs / 3600);
+            const mins = Math.floor((s.uptime_secs % 3600) / 60);
+            document.getElementById('trades-sub').textContent = 'Uptime: ' + hrs + 'h ' + mins + 'm';
+
+            document.getElementById('cycles').textContent = s.cycle_count;
+            document.getElementById('costs').textContent = '$' + s.total_costs.toFixed(4);
+            document.getElementById('costs-sub').textContent = 'API: $' + s.total_api_costs.toFixed(4) + ' | IB: $' + s.total_ib_commissions.toFixed(2);
+        }
+
+        function updateCycles(cycles) {
+            const tbody = document.getElementById('cycles-table');
+            if (!cycles.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No cycles yet</td></tr>'; return; }
+            const recent = cycles.slice(-15).reverse();
+            tbody.innerHTML = recent.map(c =>
+                `<tr><td>${c.cycle_number}</td><td>${c.markets_scanned}</td><td>${c.edges_found}</td><td>${c.bets_placed}</td><td>$${c.cycle_cost.toFixed(4)}</td><td>$${c.bankroll_after.toFixed(2)}</td></tr>`
+            ).join('');
+        }
+
+        function updateTrades(trades) {
+            const tbody = document.getElementById('trades-table');
+            if (!trades.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty-msg">No trades yet</td></tr>'; return; }
+            const recent = trades.slice(-15).reverse();
+            tbody.innerHTML = recent.map(t =>
+                `<tr><td title="${t.market_id}">${t.market_id.substring(0,12)}...</td><td>${t.side}</td><td>$${t.amount.toFixed(2)}</td><td>${(t.edge_pct*100).toFixed(1)}%</td><td>${(t.confidence*100).toFixed(0)}%</td></tr>`
+            ).join('');
+        }
+
+        // Countdown timer
+        function tick() {
+            countdownVal--;
+            document.getElementById('countdown').textContent = countdownVal;
+            if (countdownVal <= 0) { countdownVal = 30; fetchData(); }
+        }
+
+        // Init
+        initChart();
+        fetchData();
+        setInterval(tick, 1000);
+    </script>
 </body>
 </html>
