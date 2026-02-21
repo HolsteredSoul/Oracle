@@ -1,6 +1,6 @@
-# ORACLE: Iterative Development Plan
+﻿# ORACLE: Iterative Development Plan
 
-## Version 1.2 — Build Roadmap
+## Version 1.2 â€” Build Roadmap
 
 ---
 
@@ -15,17 +15,17 @@ This document defines the phased development plan for ORACLE. Each phase produce
 **Key crates**: reqwest, serde, axum, sqlx, chrono, plotters, tracing
 
 **Target platforms** (AU-compliant, confirmed February 2026):
-- **IB ForecastEx** — real-money execution via Interactive Brokers TWS API. As of February 2026, this remains the sole fully legal, real-money prediction market platform accessible to Australian residents. No additional real-money execution platforms are planned unless the regulatory landscape changes.
-- **Metaculus** — crowd forecast cross-reference (read-only)
-- **Manifold** — play-money validation and sentiment signal
+- **IB ForecastEx** â€” real-money execution via Interactive Brokers TWS API. As of February 2026, this remains the sole fully legal, real-money prediction market platform accessible to Australian residents. No additional real-money execution platforms are planned unless the regulatory landscape changes.
+- **Metaculus** â€” crowd forecast cross-reference (read-only)
+- **Manifold** â€” play-money validation and sentiment signal
 
 ---
 
-## Phase 0: Project Scaffolding ✅
+## Phase 0: Project Scaffolding âœ…
 
 **Goal**: Compilable Rust project with modular structure, config loading, and logging.
 
-**Duration**: Day 1 — **Completed 2026-02-14**
+**Duration**: Day 1 â€” **Completed 2026-02-14**
 
 ### Tasks
 
@@ -42,56 +42,56 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 ```
 oracle/
-├── Cargo.toml
-├── config.toml
-├── .env.example
-├── Dockerfile
-├── README.md
-├── src/
-│   ├── main.rs                 # Entry point, async main loop
-│   ├── config.rs               # TOML config + env var resolution
-│   ├── types.rs                # Shared types (Market, Side, Trade, etc.)
-│   ├── platforms/
-│   │   ├── mod.rs              # PredictionPlatform trait
-│   │   ├── forecastex.rs       # IB ForecastEx implementation (TWS API)
-│   │   ├── metaculus.rs        # Metaculus read-only implementation
-│   │   └── manifold.rs         # Manifold play-money implementation
-│   ├── data/
-│   │   ├── mod.rs              # DataProvider trait
-│   │   ├── weather.rs          # BOM / OpenWeatherMap / NOAA
-│   │   ├── sports.rs           # API-Sports
-│   │   ├── economics.rs        # FRED / RBA / ABS
-│   │   └── news.rs             # NewsAPI / RSS
-│   ├── llm/
-│   │   ├── mod.rs              # LLM trait + prompt builder
-│   │   ├── anthropic.rs        # Claude integration
-│   │   ├── openai.rs           # GPT-4 integration
-│   │   └── grok.rs             # Grok integration
-│   ├── strategy/
-│   │   ├── mod.rs              # Strategy orchestrator
-│   │   ├── edge.rs             # Mispricing detection
-│   │   ├── kelly.rs            # Kelly criterion sizing
-│   │   └── risk.rs             # Risk manager (limits, drawdown, correlation)
-│   ├── engine/
-│   │   ├── mod.rs              # Main scan-estimate-bet loop
-│   │   ├── scanner.rs          # Multi-platform market scanner
-│   │   ├── enricher.rs         # Data enrichment pipeline
-│   │   ├── executor.rs         # Trade execution with retries
-│   │   └── accountant.rs       # Cost tracking + survival check
-│   ├── storage/
-│   │   ├── mod.rs              # SQLite persistence
-│   │   └── schema.sql          # Database schema
-│   └── dashboard/
-│       ├── mod.rs              # Axum web server
-│       ├── routes.rs           # API endpoints
-│       └── templates/          # HTML templates (or JSON API only)
-└── tests/
-    ├── integration/
-    │   ├── mock_platform.rs    # Mock platform for testing
-    │   └── simulation.rs       # 48-hour simulation harness
-    └── unit/
-        ├── kelly_tests.rs
-        └── edge_tests.rs
+â”œâ”€â”€ Cargo.toml
+â”œâ”€â”€ config.toml
+â”œâ”€â”€ .env.example
+â”œâ”€â”€ Dockerfile
+â”œâ”€â”€ README.md
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ main.rs                 # Entry point, async main loop
+â”‚   â”œâ”€â”€ config.rs               # TOML config + env var resolution
+â”‚   â”œâ”€â”€ types.rs                # Shared types (Market, Side, Trade, etc.)
+â”‚   â”œâ”€â”€ platforms/
+â”‚   â”‚   â”œâ”€â”€ mod.rs              # PredictionPlatform trait
+â”‚   â”‚   â”œâ”€â”€ forecastex.rs       # IB ForecastEx implementation (TWS API)
+â”‚   â”‚   â”œâ”€â”€ metaculus.rs        # Metaculus read-only implementation
+â”‚   â”‚   â””â”€â”€ manifold.rs         # Manifold play-money implementation
+â”‚   â”œâ”€â”€ data/
+â”‚   â”‚   â”œâ”€â”€ mod.rs              # DataProvider trait
+â”‚   â”‚   â”œâ”€â”€ weather.rs          # BOM / OpenWeatherMap / NOAA
+â”‚   â”‚   â”œâ”€â”€ sports.rs           # API-Sports
+â”‚   â”‚   â”œâ”€â”€ economics.rs        # FRED / RBA / ABS
+â”‚   â”‚   â””â”€â”€ news.rs             # NewsAPI / RSS
+â”‚   â”œâ”€â”€ llm/
+â”‚   â”‚   â”œâ”€â”€ mod.rs              # LLM trait + prompt builder
+â”‚   â”‚   â”œâ”€â”€ anthropic.rs        # Claude integration
+â”‚   â”‚   â”œâ”€â”€ openai.rs           # GPT-4 integration
+â”‚   â”‚   â””â”€â”€ grok.rs             # Grok integration
+â”‚   â”œâ”€â”€ strategy/
+â”‚   â”‚   â”œâ”€â”€ mod.rs              # Strategy orchestrator
+â”‚   â”‚   â”œâ”€â”€ edge.rs             # Mispricing detection
+â”‚   â”‚   â”œâ”€â”€ kelly.rs            # Kelly criterion sizing
+â”‚   â”‚   â””â”€â”€ risk.rs             # Risk manager (limits, drawdown, correlation)
+â”‚   â”œâ”€â”€ engine/
+â”‚   â”‚   â”œâ”€â”€ mod.rs              # Main scan-estimate-bet loop
+â”‚   â”‚   â”œâ”€â”€ scanner.rs          # Multi-platform market scanner
+â”‚   â”‚   â”œâ”€â”€ enricher.rs         # Data enrichment pipeline
+â”‚   â”‚   â”œâ”€â”€ executor.rs         # Trade execution with retries
+â”‚   â”‚   â””â”€â”€ accountant.rs       # Cost tracking + survival check
+â”‚   â”œâ”€â”€ storage/
+â”‚   â”‚   â”œâ”€â”€ mod.rs              # SQLite persistence
+â”‚   â”‚   â””â”€â”€ schema.sql          # Database schema
+â”‚   â””â”€â”€ dashboard/
+â”‚       â”œâ”€â”€ mod.rs              # Axum web server
+â”‚       â”œâ”€â”€ routes.rs           # API endpoints
+â”‚       â””â”€â”€ templates/          # HTML templates (or JSON API only)
+â””â”€â”€ tests/
+    â”œâ”€â”€ integration/
+    â”‚   â”œâ”€â”€ mock_platform.rs    # Mock platform for testing
+    â”‚   â””â”€â”€ simulation.rs       # 48-hour simulation harness
+    â””â”€â”€ unit/
+        â”œâ”€â”€ kelly_tests.rs
+        â””â”€â”€ edge_tests.rs
 ```
 
 ### Cargo.toml (Initial)
@@ -125,7 +125,7 @@ tokio-test = "0.4"
 mockall = "0.13"
 ```
 
-**Note**: No `ethers` crate needed — we're not interacting with blockchain. IB TWS API is TCP socket-based, handled via `ibapi` crate or raw TCP with custom protocol implementation.
+**Note**: No `ethers` crate needed â€” we're not interacting with blockchain. IB TWS API is TCP socket-based, handled via `ibapi` crate or raw TCP with custom protocol implementation.
 
 ### Deliverables
 
@@ -135,11 +135,11 @@ mockall = "0.13"
 
 ---
 
-## Phase 1: Core Types and Platform Trait ✅
+## Phase 1: Core Types and Platform Trait âœ…
 
 **Goal**: Define the shared data model and platform abstraction so all subsequent modules have a stable interface.
 
-**Duration**: Day 1-2 — **Completed 2026-02-14** (76 unit tests)
+**Duration**: Day 1-2 â€” **Completed 2026-02-14** (76 unit tests)
 
 ### Tasks
 
@@ -149,8 +149,8 @@ mockall = "0.13"
 - [x] Define `Position` struct (market_id, side, size, entry_price, current_value)
 - [x] Define `LiquidityInfo` struct (bid_depth, ask_depth, volume_24h)
 - [x] Define `MarketCategory` enum (Weather, Sports, Economics, Politics, Culture, Other)
-- [x] Define `PredictionPlatform` trait (see whitepaper §3.3)
-- [x] Define `DataProvider` trait (see whitepaper §4.2)
+- [x] Define `PredictionPlatform` trait (see whitepaper Â§3.3)
+- [x] Define `DataProvider` trait (see whitepaper Â§4.2)
 - [x] Define `LlmEstimator` trait
 - [x] Implement `Display` / `Debug` for all types
 - [x] Write unit tests for type serialization/deserialization
@@ -220,20 +220,20 @@ pub struct AgentState {
 
 ---
 
-## Phase 2: Platform Integrations (Scanning) — IN PROGRESS
+## Phase 2: Platform Integrations (Scanning) â€” IN PROGRESS
 
-**Goal**: Fetch live markets from ForecastEx, Metaculus, and Manifold. No betting yet — read-only.
+**Goal**: Fetch live markets from ForecastEx, Metaculus, and Manifold. No betting yet â€” read-only.
 
 **Duration**: Day 2-4
 
-**Status**: 2B ✅, 2C ✅, and 2D ✅ complete. 2A (ForecastEx/IB) remaining.
+**Status**: 2B âœ…, 2C âœ…, and 2D âœ… complete. 2A (ForecastEx/IB) remaining.
 
 **Platform exclusivity note (2026)**: IB ForecastEx is confirmed as the sole real-money execution platform accessible from Australia. The integrations below reflect this: ForecastEx is the primary scanner and execution target, while Metaculus and Manifold serve exclusively as read-only cross-reference and validation sources. No additional real-money platform integrations are planned or needed under current AU regulations. The `PredictionPlatform` trait abstraction is retained to allow future expansion if the regulatory landscape changes.
 
 ### Tasks
 
-#### 2A: IB ForecastEx Scanner ❌ NOT STARTED
-*Intentionally deferred — most complex integration. Will implement after pipeline is proven with Manifold/Metaculus.*
+#### 2A: IB ForecastEx Scanner âŒ NOT STARTED
+*Intentionally deferred â€” most complex integration. Will implement after pipeline is proven with Manifold/Metaculus.*
 - [ ] Implement IB TWS API connection (TCP socket to IB Gateway)
 - [ ] Authenticate with client ID and account
 - [ ] Request contract details for ForecastEx event contracts
@@ -250,32 +250,32 @@ pub struct AgentState {
 
 **Reliability priority**: Since ForecastEx is the sole execution venue, the IB connection must be treated as mission-critical infrastructure. Implement robust reconnection logic, connection health monitoring, and clear alerting when the IB link is degraded or lost.
 
-#### 2B: Metaculus Scanner ✅ COMPLETE (2026-02-14)
+#### 2B: Metaculus Scanner âœ… COMPLETE (2026-02-14)
 - [x] Implement REST API client (`https://www.metaculus.com/api2/`)
 - [x] Fetch active questions with community forecasts
 - [x] Parse community median/mean probability
 - [x] Map to `Market` struct (with `platform = "metaculus"`)
 - [ ] Implement matching logic: find Metaculus questions similar to ForecastEx markets (fuzzy text matching) *(deferred to 2D: Market Router)*
 
-*Implementation: `src/platforms/metaculus.rs` — 420 lines, 24 unit tests. Paginated scanning ordered by forecaster count, category classification via slugs + title keywords, graceful handling of hidden predictions (pre-`cp_reveal_time`).*
+*Implementation: `src/platforms/metaculus.rs` â€” 420 lines, 24 unit tests. Paginated scanning ordered by forecaster count, category classification via slugs + title keywords, graceful handling of hidden predictions (pre-`cp_reveal_time`).*
 
-#### 2C: Manifold Scanner ✅ COMPLETE (2026-02-14)
+#### 2C: Manifold Scanner âœ… COMPLETE (2026-02-14)
 - [x] Implement REST API client (`https://api.manifold.markets/v0/`)
 - [x] Fetch active binary markets with play-money probabilities
 - [x] Parse into `Market` struct (with `platform = "manifold"`)
 - [x] Filter for markets matching ForecastEx categories
 - [x] Track Mana prices as sentiment signals
 
-*Implementation: `src/platforms/manifold.rs` — full `PredictionPlatform` trait impl including bet placement, balance checking, liquidity checking. Multi-sort scanning with deduplication. 17 unit tests.*
+*Implementation: `src/platforms/manifold.rs` â€” full `PredictionPlatform` trait impl including bet placement, balance checking, liquidity checking. Multi-sort scanning with deduplication. 17 unit tests.*
 
-#### 2D: Market Router ✅ COMPLETE (2026-02-17)
+#### 2D: Market Router âœ… COMPLETE (2026-02-17)
 - [x] Aggregate markets from all enabled platforms
 - [x] Match cross-platform markets (same underlying event) via fuzzy text matching
 - [x] Attach Metaculus forecasts and Manifold prices as `CrossReferences`
 - [x] Sort by category, volume, deadline
 - [x] Filter out markets below liquidity thresholds
 
-*Implementation: `src/engine/scanner.rs` — MarketRouter with concurrent platform fetching, word-overlap fuzzy matching (Jaccard + containment), category pre-filtering, priority scoring (cross-refs, liquidity, centrality). 20 unit tests.*
+*Implementation: `src/engine/scanner.rs` â€” MarketRouter with concurrent platform fetching, word-overlap fuzzy matching (Jaccard + containment), category pre-filtering, priority scoring (cross-refs, liquidity, centrality). 20 unit tests.*
 
 ### Testing
 
@@ -292,49 +292,49 @@ pub struct AgentState {
 
 ---
 
-## Phase 3: Data Enrichment Pipeline ✅
+## Phase 3: Data Enrichment Pipeline âœ…
 
 **Goal**: For each candidate market, fetch domain-specific real-time data to inform LLM estimates.
 
-**Duration**: Day 4-6 — **Completed 2026-02-21** (40 unit tests across providers + enricher)
+**Duration**: Day 4-6 â€” **Completed 2026-02-21** (40 unit tests across providers + enricher)
 
 **Cost efficiency note**: Given ForecastEx's limited market catalog (~50-200 active markets), maximizing the informational edge extracted from each market is critical. Aggressive caching and data reuse across markets sharing the same category or underlying data (e.g., multiple weather markets using the same BOM/NOAA data) are essential to both improving estimate quality and reducing API costs.
 
 ### Tasks
 
-#### 3A: Weather Data Provider ✅ COMPLETE
-- [x] Open-Meteo API integration (free, no key required — global current + 7-day forecast)
+#### 3A: Weather Data Provider âœ… COMPLETE
+- [x] Open-Meteo API integration (free, no key required â€” global current + 7-day forecast)
 - [x] Parse into `DataContext` struct
 - [x] Keyword extraction from market questions to determine relevant location/metric (14 known locations: AU cities, US cities, London, Tokyo)
 
-*Implementation: `src/data/weather.rs` — Open-Meteo (free) instead of BOM/OWM/NOAA. Covers global weather with zero API cost. 7 unit tests.*
+*Implementation: `src/data/weather.rs` â€” Open-Meteo (free) instead of BOM/OWM/NOAA. Covers global weather with zero API cost. 7 unit tests.*
 
-#### 3B: Sports Data Provider ✅ COMPLETE
+#### 3B: Sports Data Provider âœ… COMPLETE
 - [x] Keyword-based sport/league extraction (12 sports: NBA, NFL, MLB, NHL, EPL, Tennis, F1, UFC, Cricket, AFL, NRL, Olympics)
 - [x] Team name extraction from question text
 - [x] Parse into `DataContext` with cross-reference signals
-- [ ] Full API-Sports integration *(deferred — free tier only 100 req/day, insufficient for scanning)*
+- [ ] Full API-Sports integration *(deferred â€” free tier only 100 req/day, insufficient for scanning)*
 
-*Implementation: `src/data/sports.rs` — keyword extraction MVP. Full API integration deferred until needed. 7 unit tests.*
+*Implementation: `src/data/sports.rs` â€” keyword extraction MVP. Full API integration deferred until needed. 7 unit tests.*
 
-#### 3C: Economics Data Provider ✅ COMPLETE
-- [x] FRED API integration (CPI, unemployment, GDP, Fed funds, yield curve, S&P 500, housing, crypto, trade — 9 keyword groups mapping to 20+ FRED series)
+#### 3C: Economics Data Provider âœ… COMPLETE
+- [x] FRED API integration (CPI, unemployment, GDP, Fed funds, yield curve, S&P 500, housing, crypto, trade â€” 9 keyword groups mapping to 20+ FRED series)
 - [x] Keyword-only fallback when no API key configured
 - [x] Parse macro indicators into `DataContext`
-- [ ] RBA data integration *(deferred — most ForecastEx markets are US-centric)*
+- [ ] RBA data integration *(deferred â€” most ForecastEx markets are US-centric)*
 - [ ] ABS data integration *(deferred)*
 
-*Implementation: `src/data/economics.rs` — FRED primary source. Free API. 6 unit tests.*
+*Implementation: `src/data/economics.rs` â€” FRED primary source. Free API. 6 unit tests.*
 
-#### 3D: News/Sentiment Provider ✅ COMPLETE
+#### 3D: News/Sentiment Provider âœ… COMPLETE
 - [x] NewsAPI integration for breaking news (with keyword-only fallback)
 - [x] Basic sentiment scoring (positive/negative keyword count, 18+19 word lists)
 - [x] Topic classification (9 topics: US Politics, Elections, Geopolitics, China, AI/Tech, Climate, Health, Entertainment, Space)
 - [x] Search query extraction from market questions
 
-*Implementation: `src/data/news.rs` — Covers Politics, Culture, and Other categories. 11 unit tests.*
+*Implementation: `src/data/news.rs` â€” Covers Politics, Culture, and Other categories. 11 unit tests.*
 
-#### 3E: Enrichment Orchestrator ✅ COMPLETE
+#### 3E: Enrichment Orchestrator âœ… COMPLETE
 - [x] Route market to appropriate data providers based on `MarketCategory`
 - [x] Cache responses (TTL-based: 60min weather, 30min econ/sports, 15min news)
 - [x] Track and accumulate data API costs
@@ -342,7 +342,7 @@ pub struct AgentState {
 - [x] Graceful degradation (failed enrichment falls back to empty context)
 - [x] Cache hit rate monitoring
 
-*Implementation: `src/engine/enricher.rs` — Category-routed orchestrator with in-memory TTL cache. 9 unit tests.*
+*Implementation: `src/engine/enricher.rs` â€” Category-routed orchestrator with in-memory TTL cache. 9 unit tests.*
 
 ### Data Context Structure
 
@@ -370,66 +370,41 @@ pub struct DataContext {
 
 ---
 
-## Phase 4: LLM Integration and Fair-Value Estimation
+## Phase 4: LLM Integration and Fair-Value Estimation u{2705}
 
 **Goal**: Send enriched market data to the LLM and extract probability estimates.
 
-**Duration**: Day 6-8
+**Duration**: Day 6-8 -- **Completed 2026-02-21** (21 unit tests)
 
 ### Tasks
 
-#### 4A: LLM Trait and Anthropic Implementation
-- [ ] Define `LlmEstimator` trait with `estimate_probability` method
-- [ ] Implement Anthropic Claude client (reqwest to `https://api.anthropic.com/v1/messages`)
-- [ ] Build prompt template (see whitepaper §2.1)
-- [ ] Parse float from LLM response (regex extraction + validation)
-- [ ] Handle API errors, rate limits, and retries (exponential backoff)
-- [ ] Track token usage and compute cost per call
+#### 4A: LLM Trait and Anthropic Implementation u{2705} COMPLETE
+- [x] Define `LlmEstimator` trait with `estimate_probability` method
+- [x] Implement Anthropic Claude client (reqwest to `https://api.anthropic.com/v1/messages`)
+- [x] Build prompt template with calibration rules, step-by-step reasoning, cross-reference signals
+- [x] Parse float from LLM response (label extraction + fallback + percentage conversion)
+- [x] Handle API errors, rate limits, and retries (exponential backoff, 3 retries)
+- [x] Track token usage and compute cost per call (atomic counters)
+- [x] Echo detection: warn when estimate is near market price
 
-#### 4B: OpenAI GPT-4 Implementation
-- [ ] Implement OpenAI client as alternative
-- [ ] Same prompt template, different API format
+*Implementation: `src/llm/anthropic.rs` -- Full Anthropic Messages API client. 18 unit tests.*
 
-#### 4C: Batch Estimation
-- [ ] Group markets by category for batch prompts
-- [ ] "Estimate probabilities for these 10 weather markets" (one LLM call, multiple outputs)
-- [ ] Parse multi-market responses
-- [ ] Fall back to individual calls if batch parsing fails
+#### 4B: OpenAI GPT-4 Implementation u{2705} COMPLETE
+- [x] Implement OpenAI Chat Completions client as alternative
+- [x] Same prompt template, reuses Anthropic parsing utilities
 
-#### 4D: Estimate Validation
-- [ ] Reject estimates outside [0.01, 0.99] (overconfidence guard)
-- [ ] Re-query if estimate is suspiciously close to market price (possible echo)
-- [ ] Log all estimates to SQLite for calibration tracking
+*Implementation: `src/llm/openai.rs` -- GPT-4o default. 3 unit tests.*
 
-### LLM Estimator Interface
+#### 4C: Batch Estimation u{2705} COMPLETE
+- [x] Batch prompt builder for multiple markets
+- [x] Parse `MARKET_ID: xxx | PROBABILITY: 0.XX | CONFIDENCE: 0.XX` format
+- [x] Fall back to individual calls if batch parsing fails
+- [x] Small batches (2 or fewer markets) use individual calls directly
 
-```rust
-#[async_trait]
-pub trait LlmEstimator: Send + Sync {
-    async fn estimate_probability(
-        &self,
-        market: &Market,
-        context: &DataContext,
-    ) -> Result<Estimate>;
-    
-    async fn batch_estimate(
-        &self,
-        markets: &[(Market, DataContext)],
-    ) -> Result<Vec<Estimate>>;
-    
-    fn cost_per_call(&self) -> f64;
-    fn model_name(&self) -> &str;
-}
-
-#[derive(Debug, Clone)]
-pub struct Estimate {
-    pub probability: f64,
-    pub confidence: f64,       // 0-1, self-reported by LLM
-    pub reasoning: String,     // Chain-of-thought summary
-    pub tokens_used: u32,
-    pub cost: f64,
-}
-```
+#### 4D: Estimate Validation u{2705} COMPLETE
+- [x] Reject estimates outside [0.01, 0.99] (clamped automatically)
+- [x] Echo detection: warn if estimate near market price (0.02 threshold)
+- [ ] Log all estimates to SQLite *(deferred to Phase 6 -- requires storage layer)*
 
 ### Deliverables
 
@@ -438,41 +413,47 @@ pub struct Estimate {
 - Cost tracking per estimate is working
 - Batch mode reduces per-market cost by ~60%
 - `cargo run -- --estimate-only` shows fair values vs. market prices
-
 ---
 
-## Phase 5: Strategy Engine (Edge Detection + Kelly Sizing)
+## Phase 5: Strategy Engine (Edge Detection + Kelly Sizing) u{2705}
 
-**Goal**: The core brain — detect mispricings and size bets.
+**Goal**: The core brain â€” detect mispricings and size bets.
 
-**Duration**: Day 8-10
+**Duration**: Day 8-10 -- **Completed 2026-02-21** (32 unit tests)
 
 ### Tasks
 
-#### 5A: Edge Detector
-- [ ] Compare LLM estimate to market price
-- [ ] Apply category-specific thresholds (whitepaper §2.2)
-- [ ] Determine bet side (YES if estimate > price + threshold, NO if estimate < price - threshold)
-- [ ] Filter out edges below minimum (noise reduction)
+#### 5A: Edge Detector u{2705} COMPLETE
+- [x] Compare LLM estimate to market price
+- [x] Apply category-specific thresholds (whitepaper Â§2.2)
+- [x] Determine bet side (YES if estimate > price + threshold, NO if estimate < price - threshold)
+- [x] Filter out edges below minimum (noise reduction)
+- [x] Low-confidence estimates require double threshold
 
-#### 5B: Kelly Calculator
-- [ ] Implement Kelly fraction formula (whitepaper §2.3)
-- [ ] Apply fractional Kelly multiplier (default 0.25)
-- [ ] Cap at max_bet_pct (default 6%)
-- [ ] Floor at minimum bet size (IB minimum order: 1 contract)
-- [ ] Account for IB commissions in edge calculation
+*Implementation: `src/strategy/edge.rs` -- Category-specific thresholds, noise floor, confidence scaling. 10 unit tests.*
 
-#### 5C: Risk Manager
-- [ ] Check position limits before placing bet
-- [ ] Check category exposure limits
-- [ ] Check total exposure limit
-- [ ] Apply drawdown-adjusted Kelly multiplier (whitepaper §5.2)
-- [ ] Detect correlated markets and limit aggregate exposure
-- [ ] Slippage estimation based on order book depth
+#### 5B: Kelly Calculator u{2705} COMPLETE
+- [x] Implement Kelly fraction formula (whitepaper Â§2.3)
+- [x] Apply fractional Kelly multiplier (default 0.25)
+- [x] Cap at max_bet_pct (default 6%)
+- [x] Floor at minimum bet size (IB minimum order: 1 contract)
+- [x] Account for IB commissions in edge calculation
 
-#### 5D: Strategy Orchestrator
-- [ ] Pipeline: markets → filter → enrich → estimate → detect edge → size → risk check → execute
-- [ ] Rank opportunities by expected value (edge × size × confidence)
+*Implementation: `src/strategy/kelly.rs` -- Commission-adjusted Kelly with fractional multiplier, caps, floors. 11 unit tests.*
+
+#### 5C: Risk Manager u{2705} COMPLETE
+- [x] Check position limits before placing bet
+- [x] Check category exposure limits
+- [x] Check total exposure limit
+- [x] Apply drawdown-adjusted Kelly multiplier (whitepaper Â§5.2)
+- [ ] Detect correlated markets *(deferred -- requires position tracking in Phase 6)*
+- [ ] Slippage estimation *(deferred -- requires IB market data in Phase 2A)*
+
+*Implementation: `src/strategy/risk.rs` -- Exposure limits, category caps, drawdown-adjusted sizing, cycle limits. 11 unit tests.*
+
+#### 5D: Strategy Orchestrator -- PARTIAL
+- [ ] Full pipeline: markets â†’ filter â†’ enrich â†’ estimate â†’ detect edge â†’ size â†’ risk check â†’ execute
+- [ ] Rank opportunities by expected value (edge Ã— size Ã— confidence)
 - [ ] Select top N bets per cycle (avoid over-trading)
 - [ ] Log all decisions (including passed-on opportunities) for analysis
 
@@ -629,15 +610,15 @@ async fn main() -> Result<()> {
 #### 7B: API Endpoints
 
 ```
-GET  /api/status          → AgentState (balance, P&L, status, uptime)
-GET  /api/trades           → Recent trades (paginated)
-GET  /api/positions        → Current open positions (IB + Manifold)
-GET  /api/metrics          → Win rate, Sharpe, best/worst trade
-GET  /api/balance-history  → Time series of balance for charting
-GET  /api/costs            → Breakdown of API/IB costs
-GET  /api/cycle-log        → Recent cycle reports
-GET  /api/estimates        → LLM estimates with outcomes (for calibration)
-GET  /api/validation       → IB vs Manifold paper performance comparison
+GET  /api/status          â†’ AgentState (balance, P&L, status, uptime)
+GET  /api/trades           â†’ Recent trades (paginated)
+GET  /api/positions        â†’ Current open positions (IB + Manifold)
+GET  /api/metrics          â†’ Win rate, Sharpe, best/worst trade
+GET  /api/balance-history  â†’ Time series of balance for charting
+GET  /api/costs            â†’ Breakdown of API/IB costs
+GET  /api/cycle-log        â†’ Recent cycle reports
+GET  /api/estimates        â†’ LLM estimates with outcomes (for calibration)
+GET  /api/validation       â†’ IB vs Manifold paper performance comparison
 ```
 
 #### 7C: Frontend
@@ -681,7 +662,7 @@ GET  /api/validation       → IB vs Manifold paper performance comparison
 
 #### 8B: Calibration Module
 - [ ] After 50+ resolved estimates, compute calibration curve
-- [ ] Auto-adjust thresholds per category (whitepaper §6.3)
+- [ ] Auto-adjust thresholds per category (whitepaper Â§6.3)
 - [ ] Feed calibration data back into LLM prompts ("Your historical Brier score for weather markets is 0.18...")
 
 #### 8C: Parameter Optimization
@@ -691,7 +672,7 @@ GET  /api/validation       → IB vs Manifold paper performance comparison
 
 #### 8D: 48-Hour Simulation
 - [ ] Simulate 48 hours with historical data
-- [ ] Verify growth trajectory ($50 → $500+ target)
+- [ ] Verify growth trajectory ($50 â†’ $500+ target)
 - [ ] Identify failure modes and add safeguards
 - [ ] Stress test with adverse scenarios (all bets lose, APIs fail, IB disconnects)
 
@@ -725,7 +706,7 @@ GET  /api/validation       → IB vs Manifold paper performance comparison
 
 ### Property-Based Tests
 
-- Kelly bet size is always <= max_bet_pct × bankroll
+- Kelly bet size is always <= max_bet_pct Ã— bankroll
 - Kelly bet size is always >= 0
 - Risk manager never approves a bet that would exceed exposure limits
 - Agent always terminates when balance reaches 0
@@ -781,8 +762,8 @@ Each phase is complete when:
 
 | Risk | Impact | Likelihood (2026) | Mitigation |
 |------|--------|--------------------|-----------|
-| **ForecastEx low market count / low edge density** | Insufficient opportunities to cover operational costs; agent starves | **High** — confirmed constraint. ForecastEx has ~50-200 active markets vs. 500+ on offshore platforms | Aggressive data enrichment to maximize edge per market; efficient cost management (batching, caching); cross-platform signals (Metaculus/Manifold) to improve estimate quality; widen category acceptance; lower scan interval during high-activity periods |
-| **Single execution venue dependency** | If ForecastEx becomes unavailable (IB outage, product discontinuation, regulatory change), agent has zero execution capability | **Medium** — IB is a major, stable institution, but single-point-of-failure risk is inherent | Trait-based platform abstraction allows rapid integration of new platforms if they emerge; monitor IB product announcements; Manifold paper-trading provides continuous strategy validation even during IB outages; alert immediately on ForecastEx unavailability |
+| **ForecastEx low market count / low edge density** | Insufficient opportunities to cover operational costs; agent starves | **High** â€” confirmed constraint. ForecastEx has ~50-200 active markets vs. 500+ on offshore platforms | Aggressive data enrichment to maximize edge per market; efficient cost management (batching, caching); cross-platform signals (Metaculus/Manifold) to improve estimate quality; widen category acceptance; lower scan interval during high-activity periods |
+| **Single execution venue dependency** | If ForecastEx becomes unavailable (IB outage, product discontinuation, regulatory change), agent has zero execution capability | **Medium** â€” IB is a major, stable institution, but single-point-of-failure risk is inherent | Trait-based platform abstraction allows rapid integration of new platforms if they emerge; monitor IB product announcements; Manifold paper-trading provides continuous strategy validation even during IB outages; alert immediately on ForecastEx unavailability |
 | LLM estimates are poorly calibrated | Agent loses money faster than it earns | Medium | Phase 8 calibration; start with paper trading; quarter-Kelly conservative sizing |
 | API rate limits hit during scan | Missed opportunities, wasted cycles | Medium | Caching, batch requests, backoff |
 | IB Gateway disconnects | No execution possible | Medium | Auto-reconnect with exponential backoff, skip cycle, alert; connection health monitoring |
@@ -791,8 +772,8 @@ Each phase is complete when:
 | LLM API outage | No estimates possible | Medium | Fallback to secondary LLM provider, skip cycle |
 | Agent overconfidence | Systematic losses | Medium | Quarter-Kelly, calibration module, conservative thresholds, echo detection |
 | IB market hours restrictions | Can't trade outside hours | Low | Respect trading windows, queue orders for next session |
-| **Regulatory landscape change (positive)** | New compliant platforms emerge in AU, expanding opportunity set | **Low** — ACMA enforcement trend is restrictive; no new entrants expected near-term | Monitor ACMA/ASIC announcements; trait-based architecture ready for rapid integration; periodic regulatory review |
-| **Regulatory landscape change (negative)** | ACMA restricts ForecastEx or IB changes AU product offering | **Very Low** — ForecastEx operates through ASIC-regulated IB entity | Monitor IB product announcements and ACMA enforcement actions; maintain Manifold paper-trading as fallback validation; document all trades for compliance |
+| **Regulatory landscape change (positive)** | New compliant platforms emerge in AU, expanding opportunity set | **Low** â€” ACMA enforcement trend is restrictive; no new entrants expected near-term | Monitor ACMA/ASIC announcements; trait-based architecture ready for rapid integration; periodic regulatory review |
+| **Regulatory landscape change (negative)** | ACMA restricts ForecastEx or IB changes AU product offering | **Very Low** â€” ForecastEx operates through ASIC-regulated IB entity | Monitor IB product announcements and ACMA enforcement actions; maintain Manifold paper-trading as fallback validation; document all trades for compliance |
 | AU tax complexity | Unexpected tax liability | Medium | Log all trades for accountant, flag in docs |
 
 ---
@@ -822,7 +803,7 @@ Before running ORACLE, IB Gateway must be running:
 # https://www.interactivebrokers.com/en/trading/ibgateway-stable.php
 
 # 2. Run IB Gateway (headless mode for VPS)
-# Configure: API Settings → Enable ActiveX and Socket Clients
+# Configure: API Settings â†’ Enable ActiveX and Socket Clients
 # Paper trading port: 4002
 # Live trading port: 4001
 # Trusted IPs: 127.0.0.1
@@ -848,10 +829,10 @@ cp .env.example .env
 # 3. Build
 cargo build --release
 
-# 4. Run (paper trading mode — IB paper + Manifold)
+# 4. Run (paper trading mode â€” IB paper + Manifold)
 ./target/release/oracle --config config.toml
 
-# 5. Run (live — change IB port to 4001 in config)
+# 5. Run (live â€” change IB port to 4001 in config)
 # Edit config.toml: ib_port = 4001
 ./target/release/oracle --config config.toml
 
@@ -862,5 +843,5 @@ docker run -d --env-file .env --network host -p 8080:8080 oracle
 
 ---
 
-*ORACLE Development Plan v1.2 — February 2026*
+*ORACLE Development Plan v1.2 â€” February 2026*
 *Build iteratively. Test relentlessly. Survive.*

@@ -119,13 +119,13 @@ oracle/
 | 2C | Manifold Scanner | ✅ Complete | 17 |
 | 2D | Market Router | ✅ Complete | 20 |
 | 3 | Data Enrichment Pipeline | ✅ Complete | 40 |
-| 4 | LLM Integration | ⭕ Next | — |
-| 5 | Strategy Engine | — | — |
-| 6 | Execution & Survival Loop | — | — |
+| 4 | LLM Integration | ✅ Complete | 21 |
+| 5 | Strategy Engine | ✅ Complete | 32 |
+| 6 | Execution & Survival Loop | ⭕ Next | — |
 | 7 | Dashboard & Monitoring | — | — |
 | 8 | Calibration & Backtesting | — | — |
 
-**Total tests passing: 160**
+**Total tests passing: 213**
 
 ## Documentation
 
