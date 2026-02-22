@@ -15,7 +15,7 @@ This document defines the phased development plan for ORACLE. Each phase produce
 **Key crates**: reqwest, serde, axum, sqlx, chrono, plotters, tracing
 
 **Target platforms** (AU-compliant, confirmed February 2026):
-- **IB ForecastEx** â€” real-money execution via Interactive Brokers TWS API. As of February 2026, this remains the sole fully legal, real-money prediction market platform accessible to Australian residents. No additional real-money execution platforms are planned unless the regulatory landscape changes.
+- **Polymarket** -- real-money execution via Polymarket CLOB API (Polygon/USDC). Largest prediction market by liquidity with 500+ active markets.
 - **Metaculus** â€” crowd forecast cross-reference (read-only)
 - **Manifold** â€” play-money validation and sentiment signal
 
@@ -53,7 +53,7 @@ oracle/
 â”‚   â”œâ”€â”€ types.rs                # Shared types (Market, Side, Trade, etc.)
 â”‚   â”œâ”€â”€ platforms/
 â”‚   â”‚   â”œâ”€â”€ mod.rs              # PredictionPlatform trait
-â”‚   â”‚   â”œâ”€â”€ forecastex.rs       # IB ForecastEx implementation (TWS API)
+â”‚   â”‚   â”œâ”€â”€ polymarket.rs       # Polymarket (Gamma + CLOB API)
 â”‚   â”‚   â”œâ”€â”€ metaculus.rs        # Metaculus read-only implementation
 â”‚   â”‚   â””â”€â”€ manifold.rs         # Manifold play-money implementation
 â”‚   â”œâ”€â”€ data/
@@ -125,7 +125,7 @@ tokio-test = "0.4"
 mockall = "0.13"
 ```
 
-**Note**: No `ethers` crate needed â€” we're not interacting with blockchain. IB TWS API is TCP socket-based, handled via `ibapi` crate or raw TCP with custom protocol implementation.
+**Note**: No ethers crate needed at build time -- Polymarket CLOB API is REST/HMAC based. On-chain signing handled at runtime via wallet private key.
 
 ### Deliverables
 
@@ -161,7 +161,7 @@ mockall = "0.13"
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Market {
     pub id: String,
-    pub platform: String,         // "forecastex" | "metaculus" | "manifold"
+    pub platform: String,         // "polymarket" | "metaculus" | "manifold"
     pub question: String,
     pub description: String,
     pub category: MarketCategory,
@@ -222,40 +222,40 @@ pub struct AgentState {
 
 ## Phase 2: Platform Integrations (Scanning) â€” IN PROGRESS
 
-**Goal**: Fetch live markets from ForecastEx, Metaculus, and Manifold. No betting yet â€” read-only.
+**Goal**: Fetch live markets from Polymarket, Metaculus, and Manifold. No betting yet â€” read-only.
 
 **Duration**: Day 2-4
 
-**Status**: 2B âœ…, 2C âœ…, and 2D âœ… complete. 2A (ForecastEx/IB) remaining.
+**Status**: 2B âœ…, 2C âœ…, and 2D âœ… complete. 2A (Polymarket/IB) remaining.
 
-**Platform exclusivity note (2026)**: IB ForecastEx is confirmed as the sole real-money execution platform accessible from Australia. The integrations below reflect this: ForecastEx is the primary scanner and execution target, while Metaculus and Manifold serve exclusively as read-only cross-reference and validation sources. No additional real-money platform integrations are planned or needed under current AU regulations. The `PredictionPlatform` trait abstraction is retained to allow future expansion if the regulatory landscape changes.
+**Platform exclusivity note (2026)**: Polymarket is confirmed as the sole real-money execution platform accessible from Australia. The integrations below reflect this: Polymarket is the primary scanner and execution target, while Metaculus and Manifold serve exclusively as read-only cross-reference and validation sources. No additional real-money platform integrations are planned or needed under current AU regulations. The `PredictionPlatform` trait abstraction is retained to allow future expansion if the regulatory landscape changes.
 
 ### Tasks
 
-#### 2A: IB ForecastEx Scanner âŒ NOT STARTED
+#### 2A: Polymarket Scanner âŒ NOT STARTED
 *Intentionally deferred â€” most complex integration. Will implement after pipeline is proven with Manifold/Metaculus.*
-- [ ] Implement IB TWS API connection (TCP socket to IB Gateway)
+- [ ] Implement Polymarket CLOB API connection (TCP socket to Polymarket CLOB)
 - [ ] Authenticate with client ID and account
-- [ ] Request contract details for ForecastEx event contracts
+- [ ] Request contract details for Polymarket event contracts
 - [ ] Fetch market data (bid/ask/last/volume) for active contracts
 - [ ] Parse into `Market` struct
 - [ ] Handle connection drops and reconnection
 - [ ] Support both paper (port 4002) and live (port 4001) modes
 
-**IB TWS API specifics:**
-- ForecastEx contracts use `secType = "FUT"` or custom IB contract type
+**Polymarket CLOB API specifics:**
+- Polymarket uses condition IDs to identify markets and token IDs for YES/NO positions
 - Use `reqContractDetails` to discover available markets
 - Use `reqMktData` for real-time prices
 - Use `reqHistoricalData` for volume/liquidity assessment
 
-**Reliability priority**: Since ForecastEx is the sole execution venue, the IB connection must be treated as mission-critical infrastructure. Implement robust reconnection logic, connection health monitoring, and clear alerting when the IB link is degraded or lost.
+**Reliability priority**: Polymarket CLOB API is stateless REST, so connection reliability is less critical than a persistent TCP connection. Standard HTTP retry logic handles transient failures.
 
 #### 2B: Metaculus Scanner âœ… COMPLETE (2026-02-14)
 - [x] Implement REST API client (`https://www.metaculus.com/api2/`)
 - [x] Fetch active questions with community forecasts
 - [x] Parse community median/mean probability
 - [x] Map to `Market` struct (with `platform = "metaculus"`)
-- [ ] Implement matching logic: find Metaculus questions similar to ForecastEx markets (fuzzy text matching) *(deferred to 2D: Market Router)*
+- [ ] Implement matching logic: find Metaculus questions similar to Polymarket markets (fuzzy text matching) *(deferred to 2D: Market Router)*
 
 *Implementation: `src/platforms/metaculus.rs` â€” 420 lines, 24 unit tests. Paginated scanning ordered by forecaster count, category classification via slugs + title keywords, graceful handling of hidden predictions (pre-`cp_reveal_time`).*
 
@@ -263,7 +263,7 @@ pub struct AgentState {
 - [x] Implement REST API client (`https://api.manifold.markets/v0/`)
 - [x] Fetch active binary markets with play-money probabilities
 - [x] Parse into `Market` struct (with `platform = "manifold"`)
-- [x] Filter for markets matching ForecastEx categories
+- [x] Filter for markets matching Polymarket categories
 - [x] Track Mana prices as sentiment signals
 
 *Implementation: `src/platforms/manifold.rs` â€” full `PredictionPlatform` trait impl including bet placement, balance checking, liquidity checking. Multi-sort scanning with deduplication. 17 unit tests.*
@@ -279,7 +279,7 @@ pub struct AgentState {
 
 ### Testing
 
-- [ ] Run scanner against live APIs (IB paper account for ForecastEx)
+- [ ] Run scanner against live APIs (Polymarket dry-run for Polymarket)
 - [ ] Verify market count, data completeness
 - [ ] Log sample output for manual inspection
 - [ ] Write integration tests with recorded API responses
@@ -298,7 +298,7 @@ pub struct AgentState {
 
 **Duration**: Day 4-6 â€” **Completed 2026-02-21** (40 unit tests across providers + enricher)
 
-**Cost efficiency note**: Given ForecastEx's limited market catalog (~50-200 active markets), maximizing the informational edge extracted from each market is critical. Aggressive caching and data reuse across markets sharing the same category or underlying data (e.g., multiple weather markets using the same BOM/NOAA data) are essential to both improving estimate quality and reducing API costs.
+**Cost efficiency note**: Given Polymarket's limited market catalog (~50-200 active markets), maximizing the informational edge extracted from each market is critical. Aggressive caching and data reuse across markets sharing the same category or underlying data (e.g., multiple weather markets using the same BOM/NOAA data) are essential to both improving estimate quality and reducing API costs.
 
 ### Tasks
 
@@ -321,7 +321,7 @@ pub struct AgentState {
 - [x] FRED API integration (CPI, unemployment, GDP, Fed funds, yield curve, S&P 500, housing, crypto, trade â€” 9 keyword groups mapping to 20+ FRED series)
 - [x] Keyword-only fallback when no API key configured
 - [x] Parse macro indicators into `DataContext`
-- [ ] RBA data integration *(deferred â€” most ForecastEx markets are US-centric)*
+- [ ] RBA data integration *(deferred â€” most Polymarket markets are US-centric)*
 - [ ] ABS data integration *(deferred)*
 
 *Implementation: `src/data/economics.rs` â€” FRED primary source. Free API. 6 unit tests.*
@@ -437,7 +437,7 @@ pub struct DataContext {
 - [x] Apply fractional Kelly multiplier (default 0.25)
 - [x] Cap at max_bet_pct (default 6%)
 - [x] Floor at minimum bet size (IB minimum order: 1 contract)
-- [x] Account for IB commissions in edge calculation
+- [x] Account for Polymarket fees in edge calculation
 
 *Implementation: `src/strategy/kelly.rs` -- Commission-adjusted Kelly with fractional multiplier, caps, floors. 11 unit tests.*
 
@@ -447,7 +447,7 @@ pub struct DataContext {
 - [x] Check total exposure limit
 - [x] Apply drawdown-adjusted Kelly multiplier (whitepaper Â§5.2)
 - [ ] Detect correlated markets *(deferred -- requires position tracking in Phase 6)*
-- [ ] Slippage estimation *(deferred -- requires IB market data in Phase 2A)*
+- [ ] Slippage estimation *(deferred -- requires Polymarket order book data in Phase 2A)*
 
 *Implementation: `src/strategy/risk.rs` -- Exposure limits, category caps, drawdown-adjusted sizing, cycle limits. 11 unit tests.*
 
@@ -507,14 +507,14 @@ pub async fn run_cycle(&mut self) -> Result<CycleReport> {
 
 ## Phase 6: Trade Execution and Survival Loop u{2705}
 
-**Goal**: Place real bets via IB and run the autonomous loop with survival mechanics.
+**Goal**: Place real bets and run the autonomous loop with survival mechanics.
 
 **Duration**: Day 10-14 -- **Completed 2026-02-21** (16 unit tests)
 
 ### Tasks
 
-#### 6A: IB ForecastEx Executor -- DEFERRED (Phase 2A)
-- [ ] *Entire sub-phase deferred until IB Gateway setup*
+#### 6A: Polymarket Executor -- DEFERRED (Phase 2A)
+- [ ] *Entire sub-phase deferred until Polymarket CLOB setup*
 
 #### 6B: Manifold Paper Executor u{2705} COMPLETE
 - [x] Implement Manifold API bet placement (play-money)
@@ -525,7 +525,7 @@ pub async fn run_cycle(&mut self) -> Result<CycleReport> {
 *Implementation: `src/engine/executor.rs` -- Dry-run + Manifold execution with batch support. 4 unit tests.*
 
 #### 6C: Accountant Module u{2705} COMPLETE
-- [x] Track all costs per cycle (LLM, data APIs, IB commissions)
+- [x] Track all costs per cycle (LLM, data APIs, Polymarket fees)
 - [x] Track bankroll, peak, and P&L
 - [x] Compute running P&L
 - [x] Check survival condition after each cycle
@@ -539,7 +539,7 @@ pub async fn run_cycle(&mut self) -> Result<CycleReport> {
 - [x] State persistence: save `AgentState` to JSON after each cycle
 - [x] Resume from last state on restart
 - [x] Graceful shutdown via Ctrl+C signal handling
-- [ ] Respect IB market hours *(deferred to Phase 2A)*
+- [ ] Respect market deadlines and trading windows *(deferred)*
 
 *Implementation: `src/main.rs` -- Full async main loop + `src/storage/mod.rs` -- JSON state persistence. 5 storage tests.*
 
@@ -586,12 +586,12 @@ async fn main() -> Result<()> {
 
 ### Deliverables
 
-- Agent runs autonomously, placing bets on IB paper account
+- Agent runs autonomously, placing bets on Polymarket dry-run
 - Parallel paper bets on Manifold for validation
 - Cost deduction after each cycle
 - Agent terminates at zero balance
 - State survives restarts
-- Order IDs logged for all IB trades
+- Order IDs logged for all trades
 
 ---
 
@@ -618,13 +618,13 @@ async fn main() -> Result<()> {
 ```
 GET  /api/status          â†’ AgentState (balance, P&L, status, uptime)
 GET  /api/trades           â†’ Recent trades (paginated)
-GET  /api/positions        â†’ Current open positions (IB + Manifold)
+GET  /api/positions        â†’ Current open positions (Polymarket + Manifold)
 GET  /api/metrics          â†’ Win rate, Sharpe, best/worst trade
 GET  /api/balance-history  â†’ Time series of balance for charting
-GET  /api/costs            â†’ Breakdown of API/IB costs
+GET  /api/costs            â†’ Breakdown of API/Polymarket costs
 GET  /api/cycle-log        â†’ Recent cycle reports
 GET  /api/estimates        â†’ LLM estimates with outcomes (for calibration)
-GET  /api/validation       â†’ IB vs Manifold paper performance comparison
+GET  /api/validation       â†’ Polymarket vs Manifold paper performance comparison
 ```
 
 #### 7C: Frontend u{2705} COMPLETE
@@ -732,9 +732,9 @@ GET  /api/validation       â†’ IB vs Manifold paper performance comparison
 ANTHROPIC_API_KEY=sk-ant-...
 OPENAI_API_KEY=sk-...
 
-# Interactive Brokers
-IB_ACCOUNT_ID=U1234567        # IB account number
-# Note: IB Gateway/TWS must be running locally or on VPS
+# Polymarket
+POLYGON_PRIVATE_KEY=0x...        # Polymarket wallet number
+# Note: Polymarket requires a funded Polygon wallet with USDC
 # Paper: port 4002, Live: port 4001
 
 # Data Sources
@@ -773,18 +773,18 @@ Each phase is complete when:
 
 | Risk | Impact | Likelihood (2026) | Mitigation |
 |------|--------|--------------------|-----------|
-| **ForecastEx low market count / low edge density** | Insufficient opportunities to cover operational costs; agent starves | **High** â€” confirmed constraint. ForecastEx has ~50-200 active markets vs. 500+ on offshore platforms | Aggressive data enrichment to maximize edge per market; efficient cost management (batching, caching); cross-platform signals (Metaculus/Manifold) to improve estimate quality; widen category acceptance; lower scan interval during high-activity periods |
-| **Single execution venue dependency** | If ForecastEx becomes unavailable (IB outage, product discontinuation, regulatory change), agent has zero execution capability | **Medium** â€” IB is a major, stable institution, but single-point-of-failure risk is inherent | Trait-based platform abstraction allows rapid integration of new platforms if they emerge; monitor IB product announcements; Manifold paper-trading provides continuous strategy validation even during IB outages; alert immediately on ForecastEx unavailability |
+| **Polymarket low market count / low edge density** | Insufficient opportunities to cover operational costs; agent starves | **High** â€” confirmed constraint. Polymarket has ~50-200 active markets vs. 500+ on offshore platforms | Aggressive data enrichment to maximize edge per market; efficient cost management (batching, caching); cross-platform signals (Metaculus/Manifold) to improve estimate quality; widen category acceptance; lower scan interval during high-activity periods |
+| **Single execution venue dependency** | If Polymarket becomes unavailable (API outage, regulatory action), agent has zero execution capability | **Medium** | Trait-based platform abstraction allows rapid integration of alternatives; Manifold paper-trading provides continuous validation |
 | LLM estimates are poorly calibrated | Agent loses money faster than it earns | Medium | Phase 8 calibration; start with paper trading; quarter-Kelly conservative sizing |
 | API rate limits hit during scan | Missed opportunities, wasted cycles | Medium | Caching, batch requests, backoff |
-| IB Gateway disconnects | No execution possible | Medium | Auto-reconnect with exponential backoff, skip cycle, alert; connection health monitoring |
-| IB TWS API changes | Executor breaks | Low | Pin API version, integration tests with recorded responses |
+| Polymarket CLOB disconnects | No execution possible | Medium | Auto-reconnect with exponential backoff, skip cycle, alert; connection health monitoring |
+| Polymarket CLOB API changes | Executor breaks | Low | Pin API version, integration tests with recorded responses |
 | Flash crash drains bankroll | Total loss | Low | Drawdown protection, max exposure caps, quarter-Kelly |
 | LLM API outage | No estimates possible | Medium | Fallback to secondary LLM provider, skip cycle |
 | Agent overconfidence | Systematic losses | Medium | Quarter-Kelly, calibration module, conservative thresholds, echo detection |
-| IB market hours restrictions | Can't trade outside hours | Low | Respect trading windows, queue orders for next session |
+| Polymarket API rate limits | Throttled execution | Low | Respect rate limits, batch orders, backoff |
 | **Regulatory landscape change (positive)** | New compliant platforms emerge in AU, expanding opportunity set | **Low** â€” ACMA enforcement trend is restrictive; no new entrants expected near-term | Monitor ACMA/ASIC announcements; trait-based architecture ready for rapid integration; periodic regulatory review |
-| **Regulatory landscape change (negative)** | ACMA restricts ForecastEx or IB changes AU product offering | **Very Low** â€” ForecastEx operates through ASIC-regulated IB entity | Monitor IB product announcements and ACMA enforcement actions; maintain Manifold paper-trading as fallback validation; document all trades for compliance |
+| **Regulatory landscape change (negative)** | ACMA blocks Polymarket access more aggressively | **Low** | VPN fallback, monitor enforcement patterns |
 | AU tax complexity | Unexpected tax liability | Medium | Log all trades for accountant, flag in docs |
 
 ---
@@ -795,25 +795,25 @@ Each phase is complete when:
 |-------|-----------|-------------------|
 | 0 | Project compiles | `cargo build` succeeds |
 | 1 | Types defined | All types serialize/deserialize correctly |
-| 2 | Markets fetched | Markets from IB paper + Metaculus + Manifold |
+| 2 | Markets fetched | Markets from Polymarket dry-run + Metaculus + Manifold |
 | 3 | Data enriched | Weather/sports/econ context for sample markets |
 | 4 | Fair values estimated | LLM returns probabilities for 50+ markets |
 | 5 | Edges detected | Mispricings found per scan cycle |
-| 6 | Bets placed | IB paper trades + Manifold paper bets with receipts |
+| 6 | Bets placed | Polymarket dry-run trades + Manifold paper bets with receipts |
 | 7 | Dashboard live | Web UI showing all metrics |
 | 8 | Backtested | Simulation shows positive growth |
 
 ---
 
-## IB Gateway Setup (Prerequisite)
+## Polymarket CLOB Setup (Prerequisite)
 
-Before running ORACLE, IB Gateway must be running:
+Before running ORACLE, Polymarket CLOB must be running:
 
 ```bash
-# 1. Download IB Gateway from Interactive Brokers
-# https://www.interactivebrokers.com/en/trading/ibgateway-stable.php
+# 1. Download Polymarket CLOB from Polymarket
+# https://polymarket.com -- Create account, fund Polygon wallet with USDC
 
-# 2. Run IB Gateway (headless mode for VPS)
+# 2. Run Polymarket CLOB (headless mode for VPS)
 # Configure: API Settings â†’ Enable ActiveX and Socket Clients
 # Paper trading port: 4002
 # Live trading port: 4001
@@ -834,20 +834,20 @@ cd oracle
 cp .env.example .env
 # Fill in API keys in .env
 
-# 2. Start IB Gateway (paper mode)
-# Ensure IB Gateway is running on port 4002
+# 2. Start Polymarket CLOB (paper mode)
+# Ensure Polymarket CLOB is running on port 4002
 
 # 3. Build
 cargo build --release
 
-# 4. Run (paper trading mode â€” IB paper + Manifold)
+# 4. Run (paper trading mode â€” Polymarket dry-run + Manifold)
 ./target/release/oracle --config config.toml
 
-# 5. Run (live â€” change IB port to 4001 in config)
-# Edit config.toml: ib_port = 4001
+# 5. Run (live -- ensure wallet is funded with USDC)
+# Polymarket execution enabled by default when POLYGON_PRIVATE_KEY is set
 ./target/release/oracle --config config.toml
 
-# 6. Docker (ensure IB Gateway is accessible)
+# 6. Docker (ensure Polymarket CLOB is accessible)
 docker build -t oracle .
 docker run -d --env-file .env --network host -p 8080:8080 oracle
 ```

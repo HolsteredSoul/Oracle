@@ -6,21 +6,21 @@ ORACLE is a fully autonomous AI agent built in Rust that operates across predict
 and forecasting platforms to detect mispricings, estimate fair-value probabilities via LLM
 reasoning, and place Kelly-criterion-sized bets.
 
-## Platform Stack (AU-Compliant, February 2026)
+## Platform Stack
 
 | Platform | Role | Type |
 |----------|------|------|
-| **IB ForecastEx** | Real-money execution | ASIC-regulated exchange |
+| **Polymarket** | Real-money execution | On-chain CLOB, USDC on Polygon |
 | **Metaculus** | Crowd forecast cross-reference | Read-only |
 | **Manifold** | Paper-trading validation + sentiment | Play-money |
 
-ForecastEx is the sole viable real-money prediction market platform accessible from
+Polymarket is the primary execution venue, offering deep liquidity across 500+ markets. Metaculus and Manifold provide cross-reference signals for crowd forecasts and play-money sentiment.
 Australia as of February 2026.
 
 ## Prerequisites
 
 - **Rust** (stable toolchain, 2021 edition) — install via [rustup](https://rustup.rs)
-- **IB Gateway** or **TWS** running locally (paper: port 4002, live: port 4001)
+- **Polygon wallet** with USDC funded (for Polymarket execution)
 - API keys for LLM provider(s) and data sources (see `.env.example`)
 
 ## Quick Start
@@ -31,7 +31,7 @@ cd oracle
 cp .env.example .env
 # Fill in your API keys in .env
 
-# 2. Ensure IB Gateway is running (paper mode, port 4002)
+# 2. Fund a Polygon wallet with USDC for Polymarket
 
 # 3. Build
 cargo build --release
@@ -67,7 +67,7 @@ oracle/
 │   ├── types.rs            # Shared types (Market, Side, Trade, etc.)
 │   ├── platforms/          # Platform integrations
 │   │   ├── mod.rs          # PredictionPlatform trait
-│   │   ├── forecastex.rs   # IB ForecastEx (TWS API)
+│   │   ├── polymarket.rs   # Polymarket (Gamma + CLOB API)
 │   │   ├── metaculus.rs    # Metaculus (read-only)
 │   │   └── manifold.rs     # Manifold (play-money)
 │   ├── data/               # Data enrichment providers
@@ -114,7 +114,7 @@ oracle/
 |-------|-------------|--------|-------|
 | 0 | Project Scaffolding | ✅ Complete | — |
 | 1 | Core Types & Platform Trait | ✅ Complete | 59 |
-| 2A | IB ForecastEx Scanner | ❌ Deferred | — |
+| 2A | Polymarket CLOB Executor | ? In Progress | 15 |
 | 2B | Metaculus Scanner | ✅ Complete | 24 |
 | 2C | Manifold Scanner | ✅ Complete | 17 |
 | 2D | Market Router | ✅ Complete | 20 |
@@ -125,7 +125,7 @@ oracle/
 | 7 | Dashboard & Monitoring | ✅ Complete | 18 |
 | 8 | Calibration & Backtesting | ✅ Complete | 19 |
 
-**Total tests passing: 266**
+**Total tests passing: 281**
 
 ## Documentation
 
@@ -140,7 +140,7 @@ environment variables referenced in the config. See `.env.example` for the full 
 Key config sections:
 - `[agent]` — scan interval, bankroll, currency
 - `[llm]` — provider, model, token limits
-- `[platforms.*]` — ForecastEx (IB), Metaculus, Manifold
+- `[platforms.*]` - Polymarket, Metaculus, Manifold
 - `[risk]` — thresholds, Kelly multiplier, exposure limits
 - `[data_sources]` — weather, sports, economics API keys
 - `[dashboard]` — web UI port

@@ -8,6 +8,7 @@
 pub mod forecastex;
 pub mod metaculus;
 pub mod manifold;
+pub mod polymarket;
 
 use anyhow::Result;
 use async_trait::async_trait;

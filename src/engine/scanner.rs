@@ -13,6 +13,7 @@ use tracing::{debug, info, warn};
 
 use crate::platforms::manifold::ManifoldClient;
 use crate::platforms::metaculus::MetaculusClient;
+use crate::platforms::polymarket::PolymarketClient;
 use crate::platforms::PredictionPlatform;
 use crate::types::{CrossReferences, Market};
 
@@ -98,7 +99,7 @@ fn text_similarity(a: &str, b: &str) -> f64 {
 pub struct MarketRouter {
     manifold: Option<ManifoldClient>,
     metaculus: Option<MetaculusClient>,
-    // ForecastEx will be added here when Phase 2A is implemented
+    polymarket: Option<PolymarketClient>,
 }
 
 impl MarketRouter {
@@ -112,6 +113,20 @@ impl MarketRouter {
         Self {
             manifold,
             metaculus,
+            polymarket: None,
+        }
+    }
+
+    /// Create a router with Polymarket as primary execution venue.
+    pub fn with_polymarket(
+        polymarket: PolymarketClient,
+        metaculus: Option<MetaculusClient>,
+        manifold: Option<ManifoldClient>,
+    ) -> Self {
+        Self {
+            manifold,
+            metaculus,
+            polymarket: Some(polymarket),
         }
     }
 
@@ -123,9 +138,10 @@ impl MarketRouter {
         info!("Starting multi-platform market scan...");
 
         // 1. Fetch from all platforms concurrently
-        let (manifold_markets, metaculus_markets) = tokio::join!(
+        let (manifold_markets, metaculus_markets, polymarket_markets) = tokio::join!(
             self.fetch_manifold(),
             self.fetch_metaculus(),
+            self.fetch_polymarket(),
         );
 
         let mut manifold_markets = manifold_markets.unwrap_or_else(|e| {
@@ -138,9 +154,15 @@ impl MarketRouter {
             Vec::new()
         });
 
+        let polymarket_markets = polymarket_markets.unwrap_or_else(|e| {
+            warn!(error = %e, "Polymarket scan failed, continuing without");
+            Vec::new()
+        });
+
         info!(
             manifold = manifold_markets.len(),
             metaculus = metaculus_markets.len(),
+            polymarket = polymarket_markets.len(),
             "Raw markets fetched"
         );
 
@@ -148,9 +170,11 @@ impl MarketRouter {
         Self::cross_reference(&mut manifold_markets, &metaculus_markets);
 
         // 3. Merge all markets into a single list
-        //    Manifold markets are the primary set (since we can trade on them).
-        //    Metaculus-only markets are included as informational signals.
-        let mut all_markets = manifold_markets;
+        //    Polymarket markets are primary (real-money execution venue).
+        //    Manifold markets are secondary (play-money validation).
+        //    Metaculus-only markets are informational signals.
+        let mut all_markets = polymarket_markets;
+        all_markets.extend(manifold_markets);
 
         // Add Metaculus markets that didn't match any Manifold market
         // (useful for discovering questions we might want to track)
@@ -202,6 +226,13 @@ impl MarketRouter {
 
     async fn fetch_metaculus(&self) -> Result<Vec<Market>> {
         match &self.metaculus {
+            Some(client) => client.fetch_markets().await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    async fn fetch_polymarket(&self) -> Result<Vec<Market>> {
+        match &self.polymarket {
             Some(client) => client.fetch_markets().await,
             None => Ok(Vec::new()),
         }
