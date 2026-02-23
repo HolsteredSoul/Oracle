@@ -185,7 +185,7 @@ pub async fn get_costs(State(state): State<AppState>) -> Json<CostsResponse> {
 /// GET /api/metrics
 pub async fn get_metrics(State(state): State<AppState>) -> Json<MetricsResponse> {
     let agent = state.agent.read().await;
-    let initial = 50.0; // TODO: track initial bankroll in state
+    let initial = agent.bankroll - agent.total_pnl + agent.total_costs();
     let roi = if initial > 0.0 {
         ((agent.bankroll - initial) / initial) * 100.0
     } else {
