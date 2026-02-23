@@ -5,7 +5,6 @@
 //! gate before trade execution.
 
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
 
 use super::kelly::SizedBet;
 use crate::types::{AgentState, MarketCategory};

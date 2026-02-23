@@ -21,6 +21,7 @@ use oracle::storage;
 use oracle::strategy::edge::{EdgeConfig, EdgeDetector};
 use oracle::strategy::kelly::{KellyCalculator, KellyConfig};
 use oracle::strategy::risk::{RiskConfig, RiskManager};
+use oracle::strategy::{DecisionRecord, StrategyOrchestrator};
 use oracle::types::{AgentState, AgentStatus};
 
 const BANNER: &str = r#"
@@ -111,25 +112,25 @@ async fn main() -> Result<()> {
         Box::new(AnthropicClient::new(llm_api_key, Some(cfg.llm.model.clone()), None)?)
     };
 
-    // Strategy components
-    let edge_detector = EdgeDetector::new(EdgeConfig {
-        weather_threshold: *cfg.risk.category_thresholds.get("weather").unwrap_or(&0.06),
-        sports_threshold: *cfg.risk.category_thresholds.get("sports").unwrap_or(&0.08),
-        economics_threshold: *cfg.risk.category_thresholds.get("economics").unwrap_or(&0.10),
-        politics_threshold: *cfg.risk.category_thresholds.get("politics").unwrap_or(&0.12),
-        ..EdgeConfig::default()
-    });
-
-    let kelly = KellyCalculator::new(KellyConfig {
-        multiplier: cfg.risk.kelly_multiplier,
-        max_bet_pct: cfg.risk.max_bet_pct,
-        ..KellyConfig::default()
-    });
-
-    let mut risk_manager = RiskManager::new(RiskConfig {
-        max_exposure_pct: cfg.risk.max_exposure_pct,
-        ..RiskConfig::default()
-    });
+    // Strategy orchestrator (edge detection → Kelly sizing → risk approval)
+    let mut orchestrator = StrategyOrchestrator::new(
+        EdgeDetector::new(EdgeConfig {
+            weather_threshold: *cfg.risk.category_thresholds.get("weather").unwrap_or(&0.06),
+            sports_threshold: *cfg.risk.category_thresholds.get("sports").unwrap_or(&0.08),
+            economics_threshold: *cfg.risk.category_thresholds.get("economics").unwrap_or(&0.10),
+            politics_threshold: *cfg.risk.category_thresholds.get("politics").unwrap_or(&0.12),
+            ..EdgeConfig::default()
+        }),
+        KellyCalculator::new(KellyConfig {
+            multiplier: cfg.risk.kelly_multiplier,
+            max_bet_pct: cfg.risk.max_bet_pct,
+            ..KellyConfig::default()
+        }),
+        RiskManager::new(RiskConfig {
+            max_exposure_pct: cfg.risk.max_exposure_pct,
+            ..RiskConfig::default()
+        }),
+    );
 
     // Executor (dry-run until IB ForecastEx is integrated in Phase 2A)
     // Manifold execution requires a separate client with API key
@@ -156,8 +157,8 @@ async fn main() -> Result<()> {
                 }
 
                 match run_cycle(
-                    &router, &mut enricher, &*llm, &edge_detector,
-                    &kelly, &mut risk_manager, &executor, &mut state,
+                    &router, &mut enricher, &*llm, &mut orchestrator,
+                    &executor, &mut state,
                 ).await {
                     Ok(report) => {
                         log_cycle_report(&report);
@@ -201,9 +202,7 @@ async fn run_cycle(
     router: &MarketRouter,
     enricher: &mut Enricher,
     llm: &dyn LlmEstimator,
-    edge_detector: &EdgeDetector,
-    kelly: &KellyCalculator,
-    risk_manager: &mut RiskManager,
+    orchestrator: &mut StrategyOrchestrator,
     executor: &Executor,
     state: &mut AgentState,
 ) -> Result<CycleReport> {
@@ -244,36 +243,20 @@ async fn run_cycle(
         Vec::new() // No LLM key — skip estimation
     };
 
-    // 4. Edge detection
-    let edges = edge_detector.find_edges(&estimates);
-    let edges_found = edges.len();
-    info!(edges = edges_found, "Edges detected");
-
-    // 5. Kelly sizing + risk check
-    risk_manager.reset_cycle();
-    let mut approved_bets = Vec::new();
-
-    for edge in &edges {
-        if let Some(sized) = kelly.size_bet(edge, state.bankroll) {
-            match risk_manager.approve(&sized, state) {
-                Ok(adjusted_amount) => {
-                    let mut bet = sized;
-                    bet.bet_amount = adjusted_amount;
-                    risk_manager.record_approval(&bet, adjusted_amount);
-                    approved_bets.push(bet);
-                }
-                Err(reason) => {
-                    info!(
-                        market_id = %edge.market.id,
-                        reason = %reason,
-                        "Bet rejected by risk manager"
-                    );
-                }
-            }
+    // 4-5. Edge detection → Kelly sizing → risk approval (via orchestrator)
+    let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state);
+    let edges_found = decisions.len();
+    // The orchestrator logs selected/rejected bets internally; log the
+    // decision summary here for the cycle report.
+    for decision in &decisions {
+        if let DecisionRecord::KellyRejected { edge } = decision {
+            info!(
+                market_id = %edge.market.id,
+                edge = format!("{:.1}%", edge.edge * 100.0),
+                "Passed: Kelly rejected"
+            );
         }
     }
-
-    info!(approved = approved_bets.len(), "Bets approved");
 
     // 6. Execute
     let execution = executor.execute_batch(&approved_bets).await?;

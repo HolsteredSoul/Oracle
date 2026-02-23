@@ -5,7 +5,7 @@
 
 use tracing::debug;
 
-use crate::types::{BetDecision, DataContext, Estimate, Market, MarketCategory, Side};
+use crate::types::{Estimate, Market, MarketCategory, Side};
 
 // ---------------------------------------------------------------------------
 // Configuration (defaults — overridden by config.toml at runtime)
