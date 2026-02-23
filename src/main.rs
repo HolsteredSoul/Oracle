@@ -244,19 +244,11 @@ async fn run_cycle(
     };
 
     // 4-5. Edge detection → Kelly sizing → risk approval (via orchestrator)
+    orchestrator.reset_cycle();
     let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state);
+    // decisions contains KellyRejected + RiskRejected + Selected — all edges
+    // above threshold — so its length equals the raw edge count.
     let edges_found = decisions.len();
-    // The orchestrator logs selected/rejected bets internally; log the
-    // decision summary here for the cycle report.
-    for decision in &decisions {
-        if let DecisionRecord::KellyRejected { edge } = decision {
-            info!(
-                market_id = %edge.market.id,
-                edge = format!("{:.1}%", edge.edge * 100.0),
-                "Passed: Kelly rejected"
-            );
-        }
-    }
 
     // 6. Execute
     let execution = executor.execute_batch(&approved_bets).await?;
