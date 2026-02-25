@@ -6,11 +6,11 @@
 
 ## Abstract
 
-ORACLE (Optimized Risk-Adjusted Cross-platform Leveraged Engine) is a fully autonomous AI agent built in Rust that operates across prediction market and forecasting platforms — Polymarket for real-money execution via on-chain CLOB orders, Metaculus for crowd-sourced probability cross-references, and Manifold Markets for paper-trading validation — to detect mispricings, estimate fair-value probabilities via LLM reasoning, and place Kelly-criterion-sized bets. The agent self-funds its own operational costs (LLM inference, brokerage commissions, API calls), and terminates ("dies") if its bankroll reaches zero. The architecture is inspired by documented cases of turning $50 into ~$2,980 in 48 hours through systematic edge detection and disciplined risk management.
+ORACLE (Optimized Risk-Adjusted Cross-platform Leveraged Engine) is an autonomous AI agent built in Rust that operates across prediction market and forecasting platforms — Polymarket for execution via CLOB orders, Metaculus for crowd-sourced probability cross-references, and Manifold Markets for paper-trading validation — to detect mispricings, estimate fair-value probabilities via LLM reasoning, and size positions using Kelly-criterion methodology. The agent tracks its operational costs (LLM inference, commissions, API calls) and halts when its bankroll is depleted. The architecture draws on research into systematic edge detection and disciplined risk management in prediction markets.
 
 This whitepaper defines the agent's theory, architecture, risk framework, and operational model. The accompanying **Development Plan** provides the iterative build roadmap.
 
-**Execution venue**: Polymarket is the primary real-money execution venue, offering deep liquidity across politics, economics, crypto, sports, culture, and more. Trading is conducted via the Polymarket CLOB (Central Limit Order Book) API on Polygon, settling in USDC. Metaculus and Manifold serve as cross-reference signals for crowd forecasts and play-money sentiment.
+**Execution venue**: Polymarket is the primary execution venue, offering liquidity across politics, economics, crypto, sports, culture, and more. Trading is conducted via the Polymarket CLOB (Central Limit Order Book) API on Polygon, settling in USDC. Metaculus and Manifold serve as cross-reference signals for crowd forecasts and play-money sentiment.
 
 ---
 
@@ -18,7 +18,7 @@ This whitepaper defines the agent's theory, architecture, risk framework, and op
 
 Prediction markets are informationally efficient — but not perfectly so. Mispricings arise from:
 
-- **Temporal lag**: Markets react slowly to breaking news, data releases (e.g., BOM/NOAA forecasts, injury reports), and financial signals.
+- **Temporal lag**: Markets react slowly to breaking news, data releases (e.g., weather forecasts, injury reports), and financial signals.
 - **Cognitive bias**: Human participants systematically over/underweight tail risks, round probabilities, and anchor to stale prices.
 - **Fragmentation**: Different platforms and forecasting communities price the same underlying event differently. Polymarket (deep liquidity, real-money) diverges from Metaculus (crowd wisdom, no monetary skin-in-game) which diverges from Manifold (play-money, retail sentiment).
 - **Liquidity asymmetry**: Thin markets offer outsized edges but require careful sizing.
@@ -78,7 +78,7 @@ Default threshold: **8%** (0.08). Configurable per category:
 
 | Category | Default Threshold | Rationale |
 |----------|------------------|-----------|
-| Weather  | 6%  | BOM/NOAA data is high-signal, fast-decaying |
+| Weather  | 6%  | Weather data is high-signal, fast-decaying |
 | Sports   | 8%  | Injury reports create clear but priced-in edges |
 | Economics | 10% | Macro data is noisy, requires wider margin |
 | Politics | 12% | Low-frequency, hard to estimate, high noise |
@@ -102,7 +102,7 @@ Where `kelly_multiplier` defaults to **0.25** (quarter-Kelly) for conservative g
 
 **Why quarter-Kelly?** Full Kelly is theoretically optimal for geometric growth but assumes perfect edge estimation. Since LLM estimates have uncertainty, quarter-Kelly sacrifices ~50% of growth rate for ~75% reduction in variance — critical for survival.
 
-### 2.4 Survival Mechanic
+### 2.4 Operational Cost Model
 
 After each 10-minute cycle, the agent deducts operational costs:
 
@@ -114,7 +114,7 @@ After each 10-minute cycle, the agent deducts operational costs:
 | Polygon gas fees | ~$0.01 per transaction | Negligible |
 | **Total estimated** | **$0.12 - $0.47** | **$16.00 - $68.00** |
 
-If `balance <= 0` after cost deduction, the agent logs its final state and terminates. This creates genuine evolutionary pressure: the agent must generate returns exceeding its operational costs to survive.
+If `balance <= 0` after cost deduction, the agent logs its final state and halts. This creates a natural feedback loop: the agent must generate returns exceeding its operational costs to continue running.
 
 **Cost optimization strategies:**
 - Batch LLM calls (multiple markets per prompt)
@@ -130,25 +130,23 @@ If `balance <= 0` after cost deduction, the agent logs its final state and termi
 
 | Feature | Polymarket | Metaculus | Manifold |
 |---------|--------------|-----------|----------|
-| **Type** | Regulated exchange (IB) | Crowd forecasting | Play-money prediction |
-| **Settlement** | USD (brokerage account) | Reputation points | Mana (play currency) |
+| **Type** | Prediction exchange | Crowd forecasting | Play-money prediction |
+| **Settlement** | USDC (on-chain) | Reputation points | Mana (play currency) |
 | **Fees** | ~$0.25-$1.00/trade | Free | Free |
 | **Liquidity** | Moderate, event-driven | N/A (no trading) | Variable, play-money |
 | **API** | CLOB REST + Gamma REST | REST API | REST API |
-| **AU Access** | ✅ Via VPN + crypto wallet | ✅ Full | ✅ Full (play-money) |
-| **Edge opportunity** | Primary (real-money execution) | Reference only | Validation + signal |
+| **Edge opportunity** | Primary execution | Reference only | Validation + signal |
 | **Agent role** | Scan + Bet | Cross-reference | Paper trade + validate |
 
-#### 3.1.1 Why Not Other Platforms?
+#### 3.1.1 Platform Selection Rationale
 
-Polymarket is the largest prediction market by liquidity and market breadth, operating on Polygon with USDC settlement. While not officially licensed for AU residents under ACMA's Interactive Gambling Act, enforcement targets platforms rather than individual users. The landscape:
+Polymarket is the largest prediction market by liquidity and market breadth, operating on Polygon with USDC settlement. Alternative platforms were evaluated:
 
-- **Polymarket**: Blocked in Australia by ACMA since August 2025 under the Interactive Gambling Act 2001. Not accessible without circumvention (which would be illegal).
-- **Kalshi**: US-regulated (CFTC) but restricted for Australian residents.
-- **Betfair Australia**: Licensed AU betting exchange but structured as back/lay odds, not binary contracts. Narrow category depth, incompatible market structure. Not suitable for ORACLE.
-- **ForecastEx (IB)**: Regulated but thin markets, low liquidity. Available as fallback via Phase 2A.
+- **Kalshi**: US-regulated (CFTC), narrower market selection and lower liquidity than Polymarket.
+- **Betfair**: Betting exchange structured as back/lay odds, not binary contracts. Narrow category depth, incompatible market structure for binary event contract strategies.
+- **ForecastEx (IB)**: Thin markets, low liquidity. Available as optional fallback via Phase 2A.
 
-Polymarket is the primary execution venue due to its superior liquidity, market breadth, and 24/7 availability. The trait-based architecture allows adding additional platforms if the landscape changes.
+Polymarket is the primary execution venue due to its superior liquidity, market breadth, and 24/7 availability. The trait-based architecture allows adding additional platforms as needed.
 
 ### 3.2 Cross-Platform Signal Aggregation
 
@@ -210,9 +208,9 @@ The Polymarket integration is the most critical component for real-money executi
 
 | Category | Source | Signal Type | Refresh Rate |
 |----------|--------|-------------|-------------|
-| Weather | BOM (AU), OpenWeatherMap, NOAA | Forecasts, alerts, actuals | 30 min |
+| Weather | OpenWeatherMap, NOAA | Forecasts, alerts, actuals | 30 min |
 | Sports | API-Sports, ESPN | Injuries, lineups, odds | 15 min |
-| Economics | FRED, RBA, ABS | CPI, rates, employment | Daily |
+| Economics | FRED, World Bank | CPI, rates, employment | Daily |
 | News | NewsAPI, RSS feeds | Breaking events, sentiment | 10 min |
 | Financial | Yahoo Finance, CoinGecko | Prices, yields, volatility | 5 min |
 
@@ -227,7 +225,7 @@ pub trait DataProvider: Send + Sync {
     /// Fetch relevant data for a market question
     async fn fetch_context(&self, market: &Market) -> Result<DataContext>;
     
-    /// Cost per API call (for survival accounting)
+    /// Cost per API call (for cost accounting)
     fn cost_per_call(&self) -> f64;
 }
 ```
@@ -277,7 +275,7 @@ pub trait DataProvider: Send + Sync {
           ┌─────────────────┐
           │  Accountant      │
           │  (P&L, costs,    │
-          │   survival)      │
+          │   cost tracking) │
           └─────────────────┘
 ```
 
@@ -382,8 +380,8 @@ if brier > 0.25 {
 Real-time dashboard accessible at `http://localhost:8080` showing:
 
 **Header Panel:**
-- Agent status: `🟢 ALIVE` or `🔴 DIED`
-- Current bankroll (AUD equivalent across platforms)
+- Agent status: `🟢 RUNNING` or `🔴 STOPPED`
+- Current bankroll (USD equivalent across platforms)
 - Uptime and cycle count
 
 **Performance Panel:**
@@ -402,7 +400,7 @@ Real-time dashboard accessible at `http://localhost:8080` showing:
 - Cumulative API/inference costs
 - Polymarket fees paid
 - Daily burn rate estimate
-- Cycles until bankruptcy at current rate (if no wins)
+- Estimated cycles remaining at current burn rate
 - Cost per profitable trade
 
 **Risk Panel:**
@@ -413,7 +411,7 @@ Real-time dashboard accessible at `http://localhost:8080` showing:
 
 ### 7.2 Alerts
 
-- Telegram/Discord webhook on: trade execution, balance milestones, survival warnings, agent death.
+- Telegram/Discord webhook on: trade execution, balance milestones, low-balance warnings, agent shutdown.
 
 ---
 
@@ -452,9 +450,9 @@ CMD ["oracle", "--config", "/etc/oracle/config.toml"]
 [agent]
 name = "ORACLE-001"
 scan_interval_secs = 600       # 10 minutes
-initial_bankroll = 100.0       # AUD
-survival_threshold = 0.0       # Die at $0
-currency = "AUD"
+initial_bankroll = 100.0       # USD
+survival_threshold = 0.0       # Halt at $0
+currency = "USD"
 
 [llm]
 provider = "anthropic"         # "anthropic" | "openai" | "grok"
@@ -491,7 +489,7 @@ politics = 0.12
 
 [data_sources]
 openweathermap_key_env = "OWM_API_KEY"
-bom_enabled = true             # Australian Bureau of Meteorology
+noaa_enabled = true            # NOAA weather data
 api_sports_key_env = "API_SPORTS_KEY"
 fred_api_key_env = "FRED_API_KEY"
 coingecko = { enabled = true } # Free tier
@@ -509,26 +507,23 @@ telegram_chat_id_env = "TG_CHAT_ID"
 
 ## 9. Legal and Regulatory Context
 
-### 9.1 Australian Compliance (Confirmed February 2026)
+### 9.1 Platform Overview
 
-The Australian prediction market and event contract landscape is highly constrained by the Interactive Gambling Act 2001, actively enforced by ACMA. ORACLE's platform selection reflects this reality:
+ORACLE integrates with the following platforms:
 
-- **Polymarket**: Decentralised prediction market on Polygon blockchain. Largest by liquidity and market breadth (500+ active markets). Trades settle in USDC via on-chain conditional tokens. Not officially licensed for AU residents under ACMA, but enforcement targets platforms not individual users.
-- **Polymarket**: Blocked by ACMA since August 2025 under the Interactive Gambling Act 2001 as an unlicensed offshore gambling service. Australian ISPs are required to block access. Not used by ORACLE.
-- **Kalshi**: US-regulated (CFTC) but restricted for Australian residents. Not used.
-- **Betfair Australia**: Licensed Australian betting exchange operated under the Sportsbet umbrella (Flutter Entertainment). Offers limited novelty and politics markets alongside its core sports exchange. However, Betfair's market structure (back/lay fractional odds) is fundamentally different from binary event contracts (YES/NO at 0–1 prices), its non-sports category depth is shallow and inconsistent, and integration would require a separate API abstraction with different order semantics. Not suitable as an execution platform for ORACLE's binary contract strategy. Could theoretically provide supplementary cross-reference signals for overlapping markets in future versions.
-- **ForecastEx (IB)**: ASIC-regulated, thin markets. Available as optional fallback (Phase 2A).
-- **Metaculus**: No monetary bets; used as a forecasting data source and cross-reference only. No regulatory concern.
-- **Manifold**: Play-money only (Mana currency, no cash-out since March 2025). No regulatory concern.
+- **Polymarket**: Prediction market on Polygon blockchain. Largest by liquidity and market breadth (500+ active markets). Trades settle in USDC via on-chain conditional tokens.
+- **ForecastEx (IB)**: Regulated, thin markets. Available as optional fallback (Phase 2A).
+- **Metaculus**: No monetary bets; used as a forecasting data source and cross-reference only.
+- **Manifold**: Play-money only (Mana currency). Used for validation and sentiment signals.
 
-**Summary**: Polymarket is ORACLE's primary execution venue, offering the deepest liquidity and broadest market coverage. Metaculus and Manifold provide informational edge via crowd forecasts and sentiment signals.
+**Summary**: Polymarket is ORACLE's primary execution venue, offering the deepest liquidity and broadest market coverage. Metaculus and Manifold provide informational signals via crowd forecasts and sentiment data.
 
 ### 9.2 General
 
-- **LLM costs**: The agent pays for its own inference. If it can't generate alpha, it dies — natural selection for trading strategies.
-- **No insider trading**: All data sources are public APIs. The agent has no access to non-public information.
-- **Tax implications**: Prediction market profits (Polymarket) may be assessable as income or capital gains under AU tax law. Consult an accountant.
-- **Regulatory monitoring**: Monitor ACMA enforcement and any changes to Polymarket accessibility.
+- **LLM costs**: The agent tracks its own inference costs. If it cannot generate positive returns, it halts — a natural feedback mechanism for strategy viability.
+- **Data sources**: All data sources are public APIs. The agent does not use non-public information.
+- **Tax implications**: Users should consult a qualified tax professional regarding the tax treatment of prediction market activity in their jurisdiction.
+- **Regulatory compliance**: Users are responsible for ensuring compliance with applicable laws and regulations in their jurisdiction before operating the agent.
 
 ---
 
@@ -540,14 +535,14 @@ Based on simulation parameters:
 |----------|---------|-----------|----------|-----------|
 | Aggressive ($50 start) | $50 | $500-$3,000 | 68-72% | ~$20 |
 | Conservative ($100 start) | $100 | $200-$800 | 65-70% | ~$25 |
-| Survival test ($10 start) | $10 | Die or $50 | 60-65% | ~$15 |
+| Minimal ($10 start) | $10 | Halt or $50 | 60-65% | ~$15 |
 
 **Key insight**: The agent needs to find ~2-3 high-edge bets per day to cover costs. Polymarket has 500+ active markets with deep liquidity, providing ample opportunity for edge detection. Metaculus cross-references further improve estimate quality.
 
 **Market breadth advantage**: Polymarket's 500+ active markets across diverse categories provide a much larger opportunity set than any regulated alternative. Combined with cross-platform signal aggregation (Metaculus, Manifold), this gives ORACLE strong coverage for systematic edge detection.
 
 **Polymarket market categories available:**
-- Economics: CPI, Fed/RBA rates, GDP, unemployment, inflation
+- Economics: CPI, central bank rates, GDP, unemployment, inflation
 - Weather: Hurricane strength, temperature records, tornado counts
 - Culture: Billboard 100, Oscars, Grammys, Emmy awards
 - Sports: NFL, NBA, soccer, tennis, MMA, cricket, and more
@@ -559,10 +554,8 @@ Based on simulation parameters:
 - **Edge**: The difference between estimated fair value and market price.
 - **Kelly criterion**: Optimal bet sizing formula that maximizes geometric growth rate.
 - **Brier score**: Mean squared error of probabilistic predictions (lower = better; 0 = perfect, 0.25 = chance).
-- **Polymarket**: Decentralised prediction market on Polygon, offering binary outcome markets that pay $1 USDC if correct.
-- **Mana**: Manifold Markets' play-money currency. No cash-out value.
-- **BOM**: Australian Bureau of Meteorology.
-- **ACMA**: Australian Communications and Media Authority (gambling/online content regulator).
+- **Polymarket**: Prediction market on Polygon, offering binary outcome markets that pay $1 USDC if correct.
+- **Mana**: Manifold Markets' play-money currency.
 - **CLOB**: Central Limit Order Book (Polymarket's trading engine).
 - **USDC**: USD-pegged stablecoin used for Polymarket settlement on Polygon.
 
