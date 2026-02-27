@@ -25,10 +25,10 @@ Australia as of February 2026.
 
 ## Quick Start
 
-```bash
+```powershell
 # 1. Clone and configure
 cd oracle
-cp .env.example .env
+Copy-Item .env.example .env
 # Fill in your API keys in .env
 
 # 2. Fund a Polygon wallet with USDC for Polymarket
@@ -40,7 +40,7 @@ cargo build --release
 cargo run -- --config config.toml
 
 # 5. Run release build
-./target/release/oracle --config config.toml
+.\target\release\oracle.exe --config config.toml
 ```
 
 ## Docker
