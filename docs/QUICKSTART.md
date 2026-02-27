@@ -18,87 +18,115 @@ From zero to autonomous prediction market agent — step by step.
 
 ## 1. Prerequisites
 
-### System Requirements
+### What You'll Need
 
-- **OS**: Linux, macOS, or Windows (WSL2 recommended)
+- **Windows 10 or 11** (no WSL or Linux required)
 - **RAM**: 512 MB minimum
-- **Disk**: 500 MB (for Rust toolchain + build artifacts)
-- **Network**: Stable internet connection
+- **Disk**: 500 MB free space (for Rust toolchain + build files)
+- **Internet connection**
 
-### Software
+### Step 1.1 — Install Rust
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| **Rust** (stable, 2021 edition) | Build ORACLE | [rustup.rs](https://rustup.rs) |
-| **Git** | Clone the repository | Your package manager |
-| **Docker** (optional) | Container deployment | [docker.com](https://docs.docker.com/get-docker/) |
+Rust is the programming language ORACLE is built in. You need it to compile and run the project.
 
-Install Rust if you haven't already:
+1. Go to [rustup.rs](https://rustup.rs)
+2. Click **"Download rustup-init.exe (64-bit)"**
+3. Run the downloaded `.exe` and follow the prompts — the defaults are fine
+4. Once installed, **close and reopen** your terminal (PowerShell or Command Prompt) so the changes take effect
+5. Verify it worked by running:
 
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source ~/.cargo/env
+```powershell
+rustc --version
 ```
 
-### API Keys You'll Need
+You should see something like `rustc 1.77.0 (...)`. If you do, Rust is ready.
 
-| Key | Required For | Free Tier | Where to Get |
-|-----|-------------|-----------|--------------|
-| **Anthropic API key** | LLM probability estimates | Pay-per-use | [console.anthropic.com](https://console.anthropic.com/) |
-| **FRED API key** | Economic data enrichment | Yes (free) | [fred.stlouisfed.org/docs/api](https://fred.stlouisfed.org/docs/api/api_key.html) |
-| **NewsAPI key** | News sentiment data | Yes (free, 100 req/day) | [newsapi.org](https://newsapi.org/register) |
-| OpenAI API key | Alternative LLM (optional) | Pay-per-use | [platform.openai.com](https://platform.openai.com/api-keys) |
-| API-Sports key | Sports data (optional) | Yes (free, 100 req/day) | [api-sports.io](https://api-sports.io/) |
+### Step 1.2 — Install Git
 
-At minimum you need an **Anthropic API key** (or OpenAI) to run the agent. The data source keys improve estimate quality but are not strictly required — the agent falls back to keyword-based analysis without them.
+Git lets you download the ORACLE source code.
+
+1. Go to [git-scm.com/download/win](https://git-scm.com/download/win)
+2. Download and run the installer — the defaults are fine
+3. Verify it worked:
+
+```powershell
+git --version
+```
+
+### Step 1.3 — API Keys You'll Need
+
+API keys are like passwords that give ORACLE access to external services. Here's what you need:
+
+| Key | Required? | What It's For | Where to Get It |
+|-----|-----------|---------------|-----------------|
+| **Anthropic API key** | ✅ Required | The AI brain — estimates market probabilities | [console.anthropic.com](https://console.anthropic.com/) |
+| **FRED API key** | Recommended | Economic data (US macro indicators) | [fred.stlouisfed.org/docs/api](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
+| **NewsAPI key** | Recommended | News headlines & sentiment | [newsapi.org/register](https://newsapi.org/register) — free (100 req/day) |
+| OpenAI API key | Optional | Alternative to Anthropic | [platform.openai.com](https://platform.openai.com/api-keys) |
+| API-Sports key | Optional | Live sports scores | [api-sports.io](https://api-sports.io/) — free (100 req/day) |
+
+> **Minimum to get started:** You only need the **Anthropic API key**. The others improve ORACLE's accuracy but aren't required for a first run.
 
 ---
 
 ## 2. Installation
 
-```bash
-# Clone the repository
+Open **PowerShell** (search for it in the Start menu) and run these commands one at a time:
+
+```powershell
+# Download the ORACLE source code
 git clone https://github.com/HolsteredSoul/Oracle.git
+
+# Navigate into the project folder
 cd Oracle
 
-# Build in release mode
+# Compile ORACLE (this takes 1-3 minutes the first time)
 cargo build --release
 ```
 
-The binary is at `./target/release/oracle`.
+When the build finishes, the compiled program is saved at `target\release\oracle.exe`.
 
-Verify it compiled:
+Verify it compiled correctly:
 
-```bash
-./target/release/oracle --help
+```powershell
+.\target\release\oracle.exe --help
 ```
+
+You should see a list of available options. If you do, the build succeeded.
 
 ---
 
 ## 3. Configuration
 
-### 3.1 Environment Variables
+Before running ORACLE, you need to tell it your API keys. These are stored in a file called `.env` that lives in the project folder.
 
-Copy the template and fill in your keys:
+### Step 3.1 — Create Your .env File
 
-```bash
-cp .env.example .env
+In PowerShell, from inside the `Oracle` folder:
+
+```powershell
+# Create your .env file from the template
+Copy-Item .env.example .env
 ```
 
-Edit `.env` with your API keys:
+Now open `.env` in any text editor (Notepad is fine — right-click the file and choose "Open with" → Notepad) and fill in your keys:
 
-```bash
-# --- Required for operation ---
+```
+# --- Required ---
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 
-# --- Recommended (improves estimate quality) ---
+# --- Recommended (improves accuracy) ---
 FRED_API_KEY=your-fred-key-here
 NEWS_API_KEY=your-newsapi-key-here
 
 # --- Optional ---
-OPENAI_API_KEY=sk-your-openai-key       # Alternative LLM
-API_SPORTS_KEY=your-sports-key           # Sports data
+OPENAI_API_KEY=sk-your-openai-key
+API_SPORTS_KEY=your-sports-key
 ```
+
+Save and close the file.
+
+> **Important:** Never share your `.env` file or commit it to GitHub — it contains your private API keys. It's already listed in `.gitignore` so Git will ignore it automatically.
 
 ### 3.2 Config File
 
@@ -120,24 +148,26 @@ You can leave `config.toml` as-is for your first run.
 
 ## 4. Trial Run — Simulated Money
 
-This section walks you through running ORACLE with zero financial risk. The agent scans real markets and makes real probability estimates, but all bets are simulated.
+This is the best way to start. ORACLE will scan real markets, make real probability estimates using AI, but **not place or risk any real money**. All bets are logged to screen only.
 
-### 4.1 How Simulation Works
+### 4.1 How the Trial Mode Works
 
-ORACLE has two layers of simulated operation:
+By default, ORACLE runs in **dry-run mode**:
 
-1. **Dry-run mode** (default) — The agent scans Polymarket, Metaculus, and Manifold for live markets, enriches them with real data, estimates probabilities via your LLM, detects mispricings, and sizes bets using Kelly criterion — but logs trades instead of placing them. The internal bankroll is tracked in memory.
+- It scans live markets on Polymarket, Metaculus, and Manifold
+- It pulls in real-world data (news, weather, sports scores, economic indicators)
+- It sends market details to Claude (or GPT-4) to estimate the true probability
+- It detects mispricings and calculates bet sizes using the Kelly criterion
+- **But it logs the trades instead of executing them** — no wallet, no real money needed
 
-2. **Manifold paper trading** — Optionally, bets are placed on Manifold Markets using play-money (Mana). This gives you real execution feedback without financial risk.
+You can also optionally enable **Manifold paper trading**, which places bets using play-money (called "Mana") on Manifold Markets — real execution, zero financial risk.
 
 ### 4.2 Start a Dry Run
 
-No wallet setup needed. Just your LLM API key:
+Make sure your `.env` file has at least `ANTHROPIC_API_KEY` set, then in PowerShell:
 
-```bash
-# Ensure .env has at least ANTHROPIC_API_KEY set
-# Then run:
-./target/release/oracle --config config.toml
+```powershell
+.\target\release\oracle.exe --config config.toml
 ```
 
 You'll see the startup banner:
@@ -322,8 +352,8 @@ currency = "USD"
 
 ### 5.6 Step 5 — Launch with Real Funds
 
-```bash
-./target/release/oracle --config config.toml
+```powershell
+.\target\release\oracle.exe --config config.toml
 ```
 
 The agent will now:
@@ -389,20 +419,20 @@ It auto-refreshes every 30 seconds.
 
 Structured logs are written to stdout. For production, pipe to a file:
 
-```bash
-./target/release/oracle --config config.toml 2>&1 | tee -a oracle.log
+```powershell
+.\target\release\oracle.exe --config config.toml 2>&1 | Tee-Object -FilePath oracle.log -Append
 ```
 
-Enable JSON logging for log aggregation:
+Enable JSON logging:
 
-```bash
-ORACLE_LOG_JSON=1 ./target/release/oracle --config config.toml
+```powershell
+$env:ORACLE_LOG_JSON="1"; .\target\release\oracle.exe --config config.toml
 ```
 
 Adjust log verbosity:
 
-```bash
-RUST_LOG=oracle=debug ./target/release/oracle --config config.toml
+```powershell
+$env:RUST_LOG="oracle=debug"; .\target\release\oracle.exe --config config.toml
 ```
 
 ### 6.3 State Persistence
