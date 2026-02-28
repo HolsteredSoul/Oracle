@@ -4,6 +4,9 @@ pub mod edge;
 pub mod kelly;
 pub mod risk;
 
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use tracing::{debug, info, warn};
 
 use crate::types::{AgentState, BetDecision, Estimate, Market};
@@ -24,7 +27,7 @@ pub enum DecisionRecord {
     Selected {
         bet: SizedBet,
         /// Final amount after drawdown adjustment.
-        adjusted_amount: f64,
+        adjusted_amount: Decimal,
     },
     /// Edge detected but Kelly sizing returned None (negative or zero Kelly).
     KellyRejected { edge: Edge },
@@ -39,7 +42,7 @@ pub enum DecisionRecord {
 // Orchestrator
 // ---------------------------------------------------------------------------
 
-/// Pipelines edge detection → Kelly sizing → risk approval → bet selection.
+/// Pipelines edge detection -> Kelly sizing -> risk approval -> bet selection.
 ///
 /// Instantiate once per agent; call `reset_cycle` at the start of each scan
 /// cycle, then `select_bets` with the LLM estimates for that cycle.
@@ -68,7 +71,7 @@ impl StrategyOrchestrator {
     /// Steps:
     /// 1. Detect actionable edges (above category thresholds).
     /// 2. Kelly-size each edge.
-    /// 3. Rank survivors by composite score: `expected_value × confidence`.
+    /// 3. Rank survivors by composite score: `expected_value * confidence`.
     /// 4. Approve in rank order through the risk manager (enforces cycle
     ///    limit, exposure caps, drawdown halt, etc.).
     ///
@@ -97,7 +100,7 @@ impl StrategyOrchestrator {
                 None => {
                     debug!(
                         market_id = %edge.market.id,
-                        edge = format!("{:.1}%", edge.edge * 100.0),
+                        edge = %format!("{:.1}%", (edge.edge * dec!(100)).to_f64().unwrap_or(0.0)),
                         "Kelly rejected (negative/zero Kelly fraction)"
                     );
                     decisions.push(DecisionRecord::KellyRejected { edge });
@@ -105,14 +108,12 @@ impl StrategyOrchestrator {
             }
         }
 
-        // Step 3 – rank by composite score (expected value × confidence)
-        // Higher score → higher priority for scarce risk budget.
+        // Step 3 – rank by composite score (expected value * confidence)
+        // Higher score -> higher priority for scarce risk budget.
         sized.sort_by(|a, b| {
             let score_a = a.expected_value * a.edge.estimate.confidence;
             let score_b = b.expected_value * b.edge.estimate.confidence;
-            score_b
-                .partial_cmp(&score_a)
-                .unwrap_or(std::cmp::Ordering::Equal)
+            score_b.cmp(&score_a)
         });
 
         // Step 4 – risk approval in rank order
@@ -123,10 +124,10 @@ impl StrategyOrchestrator {
                     info!(
                         market_id = %bet.edge.market.id,
                         side = ?bet.edge.side,
-                        original = format!("${:.2}", bet.bet_amount),
-                        adjusted = format!("${:.2}", adjusted_amount),
-                        ev = format!("${:.4}", bet.expected_value),
-                        confidence = format!("{:.0}%", bet.edge.estimate.confidence * 100.0),
+                        original = %format!("${:.2}", bet.bet_amount.to_f64().unwrap_or(0.0)),
+                        adjusted = %format!("${:.2}", adjusted_amount.to_f64().unwrap_or(0.0)),
+                        ev = %format!("${:.4}", bet.expected_value.to_f64().unwrap_or(0.0)),
+                        confidence = %format!("{:.0}%", (bet.edge.estimate.confidence * dec!(100)).to_f64().unwrap_or(0.0)),
                         "Bet approved"
                     );
                     self.risk.record_approval(&bet, adjusted_amount);
@@ -193,7 +194,7 @@ mod tests {
 
     // ---- helpers -----------------------------------------------------------
 
-    fn make_market(id: &str, category: MarketCategory, price_yes: f64) -> Market {
+    fn make_market(id: &str, category: MarketCategory, price_yes: Decimal) -> Market {
         Market {
             id: id.to_string(),
             platform: "manifold".to_string(),
@@ -201,9 +202,9 @@ mod tests {
             description: String::new(),
             category,
             current_price_yes: price_yes,
-            current_price_no: 1.0 - price_yes,
-            volume_24h: 1000.0,
-            liquidity: 5000.0,
+            current_price_no: Decimal::ONE - price_yes,
+            volume_24h: dec!(1000),
+            liquidity: dec!(5000),
             deadline: Utc::now() + Duration::days(30),
             resolution_criteria: String::new(),
             url: String::new(),
@@ -211,26 +212,26 @@ mod tests {
         }
     }
 
-    fn make_estimate(probability: f64, confidence: f64) -> Estimate {
+    fn make_estimate(probability: Decimal, confidence: Decimal) -> Estimate {
         Estimate {
             probability,
             confidence,
             reasoning: "test reasoning".to_string(),
             tokens_used: 100,
-            cost: 0.01,
+            cost: dec!(0.01),
         }
     }
 
-    fn make_state(bankroll: f64) -> AgentState {
+    fn make_state(bankroll: Decimal) -> AgentState {
         AgentState {
             bankroll,
-            total_pnl: 0.0,
+            total_pnl: Decimal::ZERO,
             cycle_count: 0,
             trades_placed: 0,
             trades_won: 0,
             trades_lost: 0,
-            total_api_costs: 0.0,
-            total_ib_commissions: 0.0,
+            total_api_costs: Decimal::ZERO,
+            total_ib_commissions: Decimal::ZERO,
             start_time: Utc::now(),
             peak_bankroll: bankroll,
             status: AgentStatus::Alive,
@@ -241,7 +242,7 @@ mod tests {
         StrategyOrchestrator::new(
             EdgeDetector::new(EdgeConfig::default()),
             KellyCalculator::new(KellyConfig {
-                commission_per_trade: 0.0,
+                commission_per_trade: Decimal::ZERO,
                 ..KellyConfig::default()
             }),
             RiskManager::new(RiskConfig::default()),
@@ -253,7 +254,7 @@ mod tests {
     #[test]
     fn test_no_estimates_returns_empty() {
         let mut orc = make_orchestrator();
-        let state = make_state(1000.0);
+        let state = make_state(dec!(1000));
         let (bets, decisions) = orc.select_bets(&[], &state);
         assert!(bets.is_empty());
         assert!(decisions.is_empty());
@@ -262,11 +263,11 @@ mod tests {
     #[test]
     fn test_below_threshold_produces_no_bet() {
         let mut orc = make_orchestrator();
-        let state = make_state(1000.0);
-        // 4% edge, below the 6% Weather threshold → no edge detected at all
+        let state = make_state(dec!(1000));
+        // 4% edge, below the 6% Weather threshold -> no edge detected at all
         let estimates = vec![(
-            make_market("m1", MarketCategory::Weather, 0.50),
-            make_estimate(0.54, 0.9),
+            make_market("m1", MarketCategory::Weather, dec!(0.50)),
+            make_estimate(dec!(0.54), dec!(0.9)),
         )];
         let (bets, decisions) = orc.select_bets(&estimates, &state);
         assert!(bets.is_empty());
@@ -277,15 +278,15 @@ mod tests {
     #[test]
     fn test_strong_edge_produces_bet() {
         let mut orc = make_orchestrator();
-        let state = make_state(1000.0);
-        // 20% edge (market at 40%, estimate at 60%) → well above thresholds
+        let state = make_state(dec!(1000));
+        // 20% edge (market at 40%, estimate at 60%) -> well above thresholds
         let estimates = vec![(
-            make_market("m1", MarketCategory::Weather, 0.40),
-            make_estimate(0.60, 0.8),
+            make_market("m1", MarketCategory::Weather, dec!(0.40)),
+            make_estimate(dec!(0.60), dec!(0.8)),
         )];
         let (bets, decisions) = orc.select_bets(&estimates, &state);
         assert_eq!(bets.len(), 1);
-        assert!(bets[0].bet_amount > 0.0);
+        assert!(bets[0].bet_amount > Decimal::ZERO);
         assert!(matches!(decisions[0], DecisionRecord::Selected { .. }));
     }
 
@@ -293,23 +294,23 @@ mod tests {
     fn test_bets_ranked_by_ev_times_confidence() {
         let mut orc = make_orchestrator();
         // Large bankroll so exposure limits don't interfere
-        let state = make_state(10_000.0);
+        let state = make_state(dec!(10_000));
 
         let estimates = vec![
-            // Small edge → lower composite score
+            // Small edge -> lower composite score
             (
-                make_market("low_score", MarketCategory::Weather, 0.40),
-                make_estimate(0.47, 0.9), // 7% edge
+                make_market("low_score", MarketCategory::Weather, dec!(0.40)),
+                make_estimate(dec!(0.47), dec!(0.9)), // 7% edge
             ),
-            // Large edge, high confidence → highest composite score
+            // Large edge, high confidence -> highest composite score
             (
-                make_market("high_score", MarketCategory::Weather, 0.40),
-                make_estimate(0.70, 0.9), // 30% edge
+                make_market("high_score", MarketCategory::Weather, dec!(0.40)),
+                make_estimate(dec!(0.70), dec!(0.9)), // 30% edge
             ),
             // Medium edge, moderate confidence
             (
-                make_market("mid_score", MarketCategory::Weather, 0.40),
-                make_estimate(0.58, 0.7), // 18% edge, lower confidence
+                make_market("mid_score", MarketCategory::Weather, dec!(0.40)),
+                make_estimate(dec!(0.58), dec!(0.7)), // 18% edge, lower confidence
             ),
         ];
 
@@ -324,16 +325,16 @@ mod tests {
         let mut orc = StrategyOrchestrator::new(
             EdgeDetector::new(EdgeConfig::default()),
             KellyCalculator::new(KellyConfig {
-                commission_per_trade: 0.0,
-                min_bet_size: 1_000_000.0,
+                commission_per_trade: Decimal::ZERO,
+                min_bet_size: dec!(1_000_000),
                 ..KellyConfig::default()
             }),
             RiskManager::new(RiskConfig::default()),
         );
-        let state = make_state(1000.0);
+        let state = make_state(dec!(1000));
         let estimates = vec![(
-            make_market("m1", MarketCategory::Weather, 0.40),
-            make_estimate(0.60, 0.8),
+            make_market("m1", MarketCategory::Weather, dec!(0.40)),
+            make_estimate(dec!(0.60), dec!(0.8)),
         )];
         let (bets, decisions) = orc.select_bets(&estimates, &state);
         assert!(bets.is_empty());
@@ -345,14 +346,14 @@ mod tests {
     #[test]
     fn test_risk_rejection_logged_when_cycle_limit_hit() {
         let mut orc = make_orchestrator();
-        let state = make_state(1000.0);
+        let state = make_state(dec!(1000));
 
         // 6 identical bets: risk manager allows max 5 per cycle
         let estimates: Vec<_> = (0..6)
             .map(|i| {
                 (
-                    make_market(&format!("m{i}"), MarketCategory::Weather, 0.40),
-                    make_estimate(0.60, 0.8),
+                    make_market(&format!("m{i}"), MarketCategory::Weather, dec!(0.40)),
+                    make_estimate(dec!(0.60), dec!(0.8)),
                 )
             })
             .collect();
@@ -367,25 +368,25 @@ mod tests {
     #[test]
     fn test_to_bet_decisions_conversion() {
         let mut orc = make_orchestrator();
-        let state = make_state(1000.0);
+        let state = make_state(dec!(1000));
         let estimates = vec![(
-            make_market("m1", MarketCategory::Weather, 0.40),
-            make_estimate(0.60, 0.8),
+            make_market("m1", MarketCategory::Weather, dec!(0.40)),
+            make_estimate(dec!(0.60), dec!(0.8)),
         )];
         let (bets, _) = orc.select_bets(&estimates, &state);
         let decisions = StrategyOrchestrator::to_bet_decisions(&bets);
         assert_eq!(decisions.len(), bets.len());
         if let Some(d) = decisions.first() {
             assert_eq!(d.market.id, "m1");
-            assert!((d.fair_value - 0.60).abs() < 1e-10);
-            assert!(d.bet_amount > 0.0);
+            assert_eq!(d.fair_value, dec!(0.60));
+            assert!(d.bet_amount > Decimal::ZERO);
         }
     }
 
     #[test]
     fn test_reset_cycle_allows_new_bets() {
         let mut orc = make_orchestrator();
-        let state = make_state(10_000.0);
+        let state = make_state(dec!(10_000));
 
         // Spread across different categories to avoid the per-category exposure
         // cap (25%) before reaching the cycle limit (5). 20% edge is above all
@@ -400,8 +401,8 @@ mod tests {
         let estimates: Vec<_> = (0..5)
             .map(|i| {
                 (
-                    make_market(&format!("m{i}"), categories[i], 0.40),
-                    make_estimate(0.60, 0.8),
+                    make_market(&format!("m{i}"), categories[i], dec!(0.40)),
+                    make_estimate(dec!(0.60), dec!(0.8)),
                 )
             })
             .collect();
@@ -413,8 +414,8 @@ mod tests {
         // After reset, a new cycle can approve bets again
         orc.reset_cycle();
         let estimates2 = vec![(
-            make_market("new", MarketCategory::Weather, 0.40),
-            make_estimate(0.60, 0.8),
+            make_market("new", MarketCategory::Weather, dec!(0.40)),
+            make_estimate(dec!(0.60), dec!(0.8)),
         )];
         let (bets_second, _) = orc.select_bets(&estimates2, &state);
         assert_eq!(bets_second.len(), 1);
@@ -424,11 +425,11 @@ mod tests {
     fn test_drawdown_halt_blocks_all_bets() {
         let mut orc = make_orchestrator();
         // 45% drawdown exceeds the 40% halt threshold
-        let mut state = make_state(550.0);
-        state.peak_bankroll = 1000.0;
+        let mut state = make_state(dec!(550));
+        state.peak_bankroll = dec!(1000);
         let estimates = vec![(
-            make_market("m1", MarketCategory::Weather, 0.40),
-            make_estimate(0.60, 0.8),
+            make_market("m1", MarketCategory::Weather, dec!(0.40)),
+            make_estimate(dec!(0.60), dec!(0.8)),
         )];
         let (bets, decisions) = orc.select_bets(&estimates, &state);
         assert!(bets.is_empty());

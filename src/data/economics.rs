@@ -15,6 +15,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use reqwest::Client;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Deserialize;
 use tracing::debug;
 
@@ -180,12 +182,12 @@ impl EconomicsProvider {
 
         // Cross-references
         if let Some(prob) = market.cross_refs.manifold_prob {
-            parts.push(format!("\nManifold market probability: {:.1}%", prob * 100.0));
+            parts.push(format!("\nManifold market probability: {:.1}%", prob * dec!(100)));
         }
         if let Some(prob) = market.cross_refs.metaculus_prob {
             parts.push(format!(
                 "Metaculus community forecast: {:.1}% ({} forecasters)",
-                prob * 100.0,
+                prob * dec!(100),
                 market.cross_refs.metaculus_forecasters.unwrap_or(0)
             ));
         }
@@ -207,12 +209,12 @@ impl EconomicsProvider {
         }
 
         if let Some(prob) = market.cross_refs.manifold_prob {
-            parts.push(format!("Manifold market probability: {:.1}%", prob * 100.0));
+            parts.push(format!("Manifold market probability: {:.1}%", prob * dec!(100)));
         }
         if let Some(prob) = market.cross_refs.metaculus_prob {
             parts.push(format!(
                 "Metaculus community forecast: {:.1}% ({} forecasters)",
-                prob * 100.0,
+                prob * dec!(100),
                 market.cross_refs.metaculus_forecasters.unwrap_or(0)
             ));
         }
@@ -265,11 +267,11 @@ impl DataProvider for EconomicsProvider {
                     .unwrap_or_default();
 
                 let summary = Self::build_summary(&matched, &observations, market);
-                (summary, raw, 0.0) // FRED is free
+                (summary, raw, Decimal::ZERO) // FRED is free
             }
             None => {
                 let summary = Self::keyword_only_summary(&matched, market);
-                (summary, serde_json::Value::Null, 0.0)
+                (summary, serde_json::Value::Null, Decimal::ZERO)
             }
         };
 
@@ -286,8 +288,8 @@ impl DataProvider for EconomicsProvider {
         })
     }
 
-    fn cost_per_call(&self) -> f64 {
-        0.0 // FRED is free
+    fn cost_per_call(&self) -> Decimal {
+        Decimal::ZERO // FRED is free
     }
 }
 
@@ -329,13 +331,14 @@ mod tests {
 
     #[test]
     fn test_keyword_only_summary() {
+        use crate::types::d;
         let matched = EconomicsProvider::match_series("Will US CPI exceed 3%?");
         let market = Market {
             id: "test".into(), platform: "manifold".into(),
             question: "Will US CPI exceed 3%?".into(),
             description: String::new(), category: MarketCategory::Economics,
-            current_price_yes: 0.4, current_price_no: 0.6,
-            volume_24h: 100.0, liquidity: 200.0,
+            current_price_yes: d(0.4), current_price_no: d(0.6),
+            volume_24h: d(100.0), liquidity: d(200.0),
             deadline: Utc::now() + chrono::Duration::days(30),
             resolution_criteria: String::new(),
             url: "https://example.com".into(),
@@ -350,6 +353,6 @@ mod tests {
     fn test_provider_category() {
         let p = EconomicsProvider::new(None).unwrap();
         assert_eq!(p.category(), MarketCategory::Economics);
-        assert_eq!(p.cost_per_call(), 0.0);
+        assert_eq!(p.cost_per_call(), Decimal::ZERO);
     }
 }

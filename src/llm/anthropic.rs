@@ -7,11 +7,14 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use super::LlmEstimator;
-use crate::types::{DataContext, Estimate, Market};
+use crate::types::{d, DataContext, Estimate, Market};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -240,7 +243,10 @@ impl AnthropicClient {
         }
 
         prompt.push_str(&format!("DEADLINE: {}\n", market.deadline.format("%Y-%m-%d %H:%M UTC")));
-        prompt.push_str(&format!("CURRENT MARKET PRICE (YES): {:.1}%\n", market.current_price_yes * 100.0));
+        prompt.push_str(&format!(
+            "CURRENT MARKET PRICE (YES): {:.1}%\n",
+            (market.current_price_yes * dec!(100)).to_f64().unwrap_or(0.0)
+        ));
         prompt.push_str(&format!("PLATFORM: {}\n", market.platform));
 
         prompt.push_str("\nREAL-TIME DATA:\n");
@@ -249,10 +255,16 @@ impl AnthropicClient {
         prompt.push_str("\n\nCROSS-REFERENCE SIGNALS:\n");
         if let Some(p) = context.metaculus_forecast {
             let n = context.metaculus_forecasters.unwrap_or(0);
-            prompt.push_str(&format!("- Metaculus community forecast: {:.1}% ({n} forecasters)\n", p * 100.0));
+            prompt.push_str(&format!(
+                "- Metaculus community forecast: {:.1}% ({n} forecasters)\n",
+                (p * dec!(100)).to_f64().unwrap_or(0.0)
+            ));
         }
         if let Some(p) = context.manifold_price {
-            prompt.push_str(&format!("- Manifold play-money price: {:.1}%\n", p * 100.0));
+            prompt.push_str(&format!(
+                "- Manifold play-money price: {:.1}%\n",
+                (p * dec!(100)).to_f64().unwrap_or(0.0)
+            ));
         }
 
         prompt.push_str("\nPlease reason step-by-step, then output your final estimate.\n");
@@ -275,14 +287,23 @@ impl AnthropicClient {
             prompt.push_str(&format!("--- MARKET {} (ID: {}) ---\n", i + 1, market.id));
             prompt.push_str(&format!("QUESTION: \"{}\"\n", market.question));
             prompt.push_str(&format!("DEADLINE: {}\n", market.deadline.format("%Y-%m-%d")));
-            prompt.push_str(&format!("CURRENT PRICE: {:.1}%\n", market.current_price_yes * 100.0));
+            prompt.push_str(&format!(
+                "CURRENT PRICE: {:.1}%\n",
+                (market.current_price_yes * dec!(100)).to_f64().unwrap_or(0.0)
+            ));
             prompt.push_str(&format!("DATA: {}\n", context.summary));
 
             if let Some(p) = context.metaculus_forecast {
-                prompt.push_str(&format!("METACULUS: {:.1}%\n", p * 100.0));
+                prompt.push_str(&format!(
+                    "METACULUS: {:.1}%\n",
+                    (p * dec!(100)).to_f64().unwrap_or(0.0)
+                ));
             }
             if let Some(p) = context.manifold_price {
-                prompt.push_str(&format!("MANIFOLD: {:.1}%\n", p * 100.0));
+                prompt.push_str(&format!(
+                    "MANIFOLD: {:.1}%\n",
+                    (p * dec!(100)).to_f64().unwrap_or(0.0)
+                ));
             }
             prompt.push('\n');
         }
@@ -291,6 +312,7 @@ impl AnthropicClient {
     }
 
     /// Parse probability and confidence from LLM response text.
+    /// Returns (f64, f64, String) — converted to Decimal at the call site.
     pub fn parse_estimate(text: &str) -> Result<(f64, f64, String)> {
         let lines: Vec<&str> = text.lines().collect();
 
@@ -484,24 +506,28 @@ impl LlmEstimator for AnthropicClient {
         let (response_text, tokens, cost) = self.call_api(system, &user_msg).await
             .context("Anthropic API call failed")?;
 
-        let (probability, confidence, reasoning) = Self::parse_estimate(&response_text)
+        let (prob_f64, conf_f64, reasoning) = Self::parse_estimate(&response_text)
             .context("Failed to parse estimate from LLM response")?;
 
+        let probability = d(prob_f64);
+        let confidence = d(conf_f64);
+        let cost = d(cost);
+
         // Echo detection: warn if estimate is suspiciously close to market price
-        let echo_threshold = 0.02;
+        let echo_threshold = dec!(0.02);
         if (probability - market.current_price_yes).abs() < echo_threshold {
             warn!(
                 market_id = %market.id,
-                estimate = probability,
-                market_price = market.current_price_yes,
+                estimate = %probability,
+                market_price = %market.current_price_yes,
                 "Possible echo: estimate very close to market price"
             );
         }
 
         info!(
             market_id = %market.id,
-            probability = format!("{:.1}%", probability * 100.0),
-            confidence = format!("{:.0}%", confidence * 100.0),
+            probability = format!("{:.1}%", (probability * dec!(100)).to_f64().unwrap_or(0.0)),
+            confidence = format!("{:.0}%", (confidence * dec!(100)).to_f64().unwrap_or(0.0)),
             tokens,
             cost = format!("${:.4}", cost),
             "Estimate complete"
@@ -554,11 +580,11 @@ impl LlmEstimator for AnthropicClient {
             match parsed.get(i).and_then(|p| p.as_ref()) {
                 Some((prob, conf)) => {
                     results.push(Estimate {
-                        probability: *prob,
-                        confidence: *conf,
+                        probability: d(*prob),
+                        confidence: d(*conf),
                         reasoning: format!("(batch estimate for {})", market.id),
                         tokens_used: tokens_per_market,
-                        cost: cost_per_market,
+                        cost: d(cost_per_market),
                     });
                 }
                 None => {
@@ -572,10 +598,10 @@ impl LlmEstimator for AnthropicClient {
                             // Return a default low-confidence estimate
                             results.push(Estimate {
                                 probability: market.current_price_yes, // echo market price
-                                confidence: 0.1,
+                                confidence: dec!(0.1),
                                 reasoning: format!("Estimation failed: {e}"),
                                 tokens_used: 0,
-                                cost: 0.0,
+                                cost: Decimal::ZERO,
                             });
                         }
                     }
@@ -592,10 +618,10 @@ impl LlmEstimator for AnthropicClient {
         Ok(results)
     }
 
-    fn cost_per_call(&self) -> f64 {
+    fn cost_per_call(&self) -> Decimal {
         // Approximate cost for a typical single estimation
         // ~500 input tokens + ~300 output tokens
-        (500.0 / 1000.0) * INPUT_COST_PER_1K + (300.0 / 1000.0) * OUTPUT_COST_PER_1K
+        d((500.0 / 1000.0) * INPUT_COST_PER_1K + (300.0 / 1000.0) * OUTPUT_COST_PER_1K)
     }
 
     fn model_name(&self) -> &str {
@@ -642,17 +668,17 @@ mod tests {
             question: "Will it rain in Sydney tomorrow?".into(),
             description: String::new(),
             category: crate::types::MarketCategory::Weather,
-            current_price_yes: 0.65,
-            current_price_no: 0.35,
-            volume_24h: 500.0,
-            liquidity: 1000.0,
+            current_price_yes: dec!(0.65),
+            current_price_no: dec!(0.35),
+            volume_24h: dec!(500),
+            liquidity: dec!(1000),
             deadline: chrono::Utc::now() + chrono::Duration::days(1),
             resolution_criteria: "Resolves YES if BOM records >0.2mm".into(),
             url: "https://example.com".into(),
             cross_refs: crate::types::CrossReferences {
-                metaculus_prob: Some(0.70),
+                metaculus_prob: Some(dec!(0.70)),
                 metaculus_forecasters: Some(50),
-                manifold_prob: Some(0.65),
+                manifold_prob: Some(dec!(0.65)),
                 forecastex_price: None,
             },
         };
@@ -663,10 +689,10 @@ mod tests {
             summary: "Sydney: 25°C, 60% humidity, 80% rain chance".into(),
             freshness: chrono::Utc::now(),
             source: "open-meteo".into(),
-            cost: 0.0,
-            metaculus_forecast: Some(0.70),
+            cost: Decimal::ZERO,
+            metaculus_forecast: Some(dec!(0.70)),
             metaculus_forecasters: Some(50),
-            manifold_price: Some(0.65),
+            manifold_price: Some(dec!(0.65)),
         };
 
         let prompt = AnthropicClient::build_single_prompt(&market, &context);
@@ -686,8 +712,8 @@ mod tests {
                 id: "m1".into(), platform: "manifold".into(),
                 question: "Q1?".into(), description: String::new(),
                 category: crate::types::MarketCategory::Weather,
-                current_price_yes: 0.5, current_price_no: 0.5,
-                volume_24h: 0.0, liquidity: 0.0,
+                current_price_yes: dec!(0.5), current_price_no: dec!(0.5),
+                volume_24h: Decimal::ZERO, liquidity: Decimal::ZERO,
                 deadline: chrono::Utc::now() + chrono::Duration::days(7),
                 resolution_criteria: String::new(), url: String::new(),
                 cross_refs: Default::default(),
@@ -833,6 +859,6 @@ mod tests {
     #[test]
     fn test_cost_per_call_positive() {
         let client = AnthropicClient::new("key".into(), None, None).unwrap();
-        assert!(client.cost_per_call() > 0.0);
+        assert!(client.cost_per_call() > Decimal::ZERO);
     }
 }

@@ -14,6 +14,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use reqwest::Client;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Deserialize;
 use tracing::debug;
 
@@ -142,12 +144,12 @@ impl SportsProvider {
         }
 
         if let Some(prob) = market.cross_refs.manifold_prob {
-            parts.push(format!("Manifold market probability: {:.1}%", prob * 100.0));
+            parts.push(format!("Manifold market probability: {:.1}%", prob * dec!(100)));
         }
         if let Some(prob) = market.cross_refs.metaculus_prob {
             parts.push(format!(
                 "Metaculus community forecast: {:.1}% ({} forecasters)",
-                prob * 100.0,
+                prob * dec!(100),
                 market.cross_refs.metaculus_forecasters.unwrap_or(0)
             ));
         }
@@ -175,15 +177,15 @@ impl DataProvider for SportsProvider {
             summary,
             freshness: Utc::now(),
             source: "keyword-extraction".to_string(),
-            cost: 0.0,
+            cost: Decimal::ZERO,
             metaculus_forecast: market.cross_refs.metaculus_prob,
             metaculus_forecasters: market.cross_refs.metaculus_forecasters,
             manifold_price: market.cross_refs.manifold_prob,
         })
     }
 
-    fn cost_per_call(&self) -> f64 {
-        0.0 // Keyword extraction is free; API calls would be ~$0 (free tier)
+    fn cost_per_call(&self) -> Decimal {
+        Decimal::ZERO // Keyword extraction is free; API calls would be ~$0 (free tier)
     }
 }
 
@@ -231,12 +233,13 @@ mod tests {
 
     #[test]
     fn test_keyword_summary_includes_sport() {
+        use crate::types::d;
         let market = Market {
             id: "test".into(), platform: "manifold".into(),
             question: "Will the Lakers win the NBA championship?".into(),
             description: String::new(), category: MarketCategory::Sports,
-            current_price_yes: 0.3, current_price_no: 0.7,
-            volume_24h: 100.0, liquidity: 500.0,
+            current_price_yes: d(0.3), current_price_no: d(0.7),
+            volume_24h: d(100.0), liquidity: d(500.0),
             deadline: Utc::now() + chrono::Duration::days(30),
             resolution_criteria: String::new(),
             url: "https://example.com".into(),
@@ -251,6 +254,6 @@ mod tests {
     fn test_provider_category() {
         let p = SportsProvider::new(None).unwrap();
         assert_eq!(p.category(), MarketCategory::Sports);
-        assert_eq!(p.cost_per_call(), 0.0);
+        assert_eq!(p.cost_per_call(), Decimal::ZERO);
     }
 }

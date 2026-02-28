@@ -9,6 +9,7 @@
 
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
@@ -97,7 +98,7 @@ pub struct Enricher {
     economics: EconomicsProvider,
     news: NewsProvider,
     cache: ContextCache,
-    total_cost: f64,
+    total_cost: Decimal,
     total_calls: u64,
     cache_hits: u64,
 }
@@ -119,7 +120,7 @@ impl Enricher {
             news: NewsProvider::new(news_api_key)
                 .context("Failed to initialise news provider")?,
             cache: ContextCache::new(),
-            total_cost: 0.0,
+            total_cost: Decimal::ZERO,
             total_calls: 0,
             cache_hits: 0,
         })
@@ -161,7 +162,7 @@ impl Enricher {
             total_calls = self.total_calls,
             cache_hits = self.cache_hits,
             cache_size = self.cache.len(),
-            total_cost = self.total_cost,
+            total_cost = %self.total_cost,
             "Batch enrichment complete"
         );
 
@@ -252,7 +253,7 @@ impl Enricher {
     // -- Accessors for monitoring ----------------------------------------
 
     /// Total API cost incurred so far.
-    pub fn total_cost(&self) -> f64 {
+    pub fn total_cost(&self) -> Decimal {
         self.total_cost
     }
 
@@ -284,7 +285,7 @@ impl Enricher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::CrossReferences;
+    use crate::types::{CrossReferences, d};
 
     fn make_market(
         id: &str,
@@ -297,10 +298,10 @@ mod tests {
             question: question.to_string(),
             description: String::new(),
             category,
-            current_price_yes: 0.5,
-            current_price_no: 0.5,
-            volume_24h: 100.0,
-            liquidity: 200.0,
+            current_price_yes: d(0.5),
+            current_price_no: d(0.5),
+            volume_24h: d(100.0),
+            liquidity: d(200.0),
             deadline: Utc::now() + Duration::days(30),
             resolution_criteria: String::new(),
             url: "https://example.com".to_string(),
@@ -395,7 +396,7 @@ mod tests {
         let enricher = Enricher::new(None, None, None);
         assert!(enricher.is_ok());
         let e = enricher.unwrap();
-        assert_eq!(e.total_cost(), 0.0);
+        assert_eq!(e.total_cost(), Decimal::ZERO);
         assert_eq!(e.total_calls(), 0);
         assert_eq!(e.cache_hits(), 0);
         assert_eq!(e.cache_hit_rate(), 0.0);

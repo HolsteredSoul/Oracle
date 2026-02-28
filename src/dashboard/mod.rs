@@ -80,10 +80,11 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use crate::types::AgentState;
+    use rust_decimal_macros::dec;
     use tower::ServiceExt;
 
     fn test_state() -> AppState {
-        Arc::new(DashboardState::new(AgentState::new(100.0)))
+        Arc::new(DashboardState::new(AgentState::new(dec!(100))))
     }
 
     #[tokio::test]

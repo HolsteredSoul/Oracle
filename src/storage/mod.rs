@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use std::path::Path;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 use crate::types::AgentState;
 
@@ -22,7 +22,7 @@ pub fn save_state(state: &AgentState, path: Option<&str>) -> Result<()> {
     std::fs::write(path, &json)
         .context(format!("Failed to write state to {path}"))?;
 
-    debug!(path, bankroll = state.bankroll, "State saved");
+    debug!(path, bankroll = %state.bankroll, "State saved");
     Ok(())
 }
 
@@ -44,7 +44,7 @@ pub fn load_state(path: Option<&str>) -> Result<Option<AgentState>> {
 
     info!(
         path,
-        bankroll = state.bankroll,
+        bankroll = %state.bankroll,
         cycle_count = state.cycle_count,
         trades = state.trades_placed,
         "State loaded from disk"
@@ -71,6 +71,8 @@ pub fn delete_state(path: Option<&str>) -> Result<()> {
 mod tests {
     use super::*;
     use crate::types::AgentStatus;
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
     use std::path::PathBuf;
 
     fn temp_path() -> String {
@@ -82,13 +84,13 @@ mod tests {
     #[test]
     fn test_save_and_load() {
         let path = temp_path();
-        let state = AgentState::new(100.0);
+        let state = AgentState::new(dec!(100));
         save_state(&state, Some(&path)).unwrap();
 
         let loaded = load_state(Some(&path)).unwrap();
         assert!(loaded.is_some());
         let loaded = loaded.unwrap();
-        assert!((loaded.bankroll - 100.0).abs() < 1e-10);
+        assert_eq!(loaded.bankroll, dec!(100));
         assert_eq!(loaded.status, AgentStatus::Alive);
 
         delete_state(Some(&path)).unwrap();
@@ -104,13 +106,13 @@ mod tests {
     #[test]
     fn test_save_preserves_fields() {
         let path = temp_path();
-        let mut state = AgentState::new(500.0);
+        let mut state = AgentState::new(dec!(500));
         state.cycle_count = 42;
         state.trades_placed = 10;
         state.trades_won = 7;
-        state.total_pnl = 25.0;
-        state.bankroll = 525.0;
-        state.peak_bankroll = 550.0;
+        state.total_pnl = dec!(25);
+        state.bankroll = dec!(525);
+        state.peak_bankroll = dec!(550);
 
         save_state(&state, Some(&path)).unwrap();
         let loaded = load_state(Some(&path)).unwrap().unwrap();
@@ -118,9 +120,9 @@ mod tests {
         assert_eq!(loaded.cycle_count, 42);
         assert_eq!(loaded.trades_placed, 10);
         assert_eq!(loaded.trades_won, 7);
-        assert!((loaded.total_pnl - 25.0).abs() < 1e-10);
-        assert!((loaded.bankroll - 525.0).abs() < 1e-10);
-        assert!((loaded.peak_bankroll - 550.0).abs() < 1e-10);
+        assert_eq!(loaded.total_pnl, dec!(25));
+        assert_eq!(loaded.bankroll, dec!(525));
+        assert_eq!(loaded.peak_bankroll, dec!(550));
 
         delete_state(Some(&path)).unwrap();
     }
@@ -128,7 +130,7 @@ mod tests {
     #[test]
     fn test_delete_state() {
         let path = temp_path();
-        save_state(&AgentState::new(50.0), Some(&path)).unwrap();
+        save_state(&AgentState::new(dec!(50)), Some(&path)).unwrap();
         assert!(Path::new(&path).exists());
 
         delete_state(Some(&path)).unwrap();

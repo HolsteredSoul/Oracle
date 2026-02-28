@@ -13,12 +13,13 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::Client;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
 use super::PredictionPlatform;
 use crate::types::{
-    CrossReferences, LiquidityInfo, Market, MarketCategory, Position, Side, TradeReceipt,
+    d, CrossReferences, LiquidityInfo, Market, MarketCategory, Position, Side, TradeReceipt,
 };
 
 // ---------------------------------------------------------------------------
@@ -31,14 +32,14 @@ const PLATFORM_NAME: &str = "metaculus";
 /// Maximum questions per API page (Metaculus caps at 100).
 const PAGE_LIMIT: u32 = 100;
 
-/// Maximum pages to fetch per scan (100 × 5 = 500 questions max).
+/// Maximum pages to fetch per scan (100 x 5 = 500 questions max).
 const MAX_PAGES: u32 = 5;
 
 /// Minimum forecasters for a question to be useful as a signal.
 const MIN_FORECASTERS: u32 = 5;
 
 // ---------------------------------------------------------------------------
-// API response types (Metaculus JSON → Rust)
+// API response types (Metaculus JSON -> Rust)
 // ---------------------------------------------------------------------------
 
 /// Top-level paginated response from `/api2/questions/`.
@@ -343,6 +344,7 @@ impl MetaculusClient {
         }
 
         let prob = Self::extract_probability(&post)?;
+        let prob_dec = d(prob);
         let forecasters = Self::forecaster_count(&post);
         let category = Self::classify(&post);
 
@@ -371,17 +373,17 @@ impl MetaculusClient {
             question: post.title,
             description,
             category,
-            current_price_yes: prob,
-            current_price_no: 1.0 - prob,
+            current_price_yes: prob_dec,
+            current_price_no: Decimal::ONE - prob_dec,
             // Metaculus doesn't have volume/liquidity in the monetary sense.
             // We use forecaster count as a proxy for "information depth".
-            volume_24h: 0.0,
-            liquidity: forecasters as f64,
+            volume_24h: Decimal::ZERO,
+            liquidity: d(forecasters as f64),
             deadline,
             resolution_criteria,
             url,
             cross_refs: CrossReferences {
-                metaculus_prob: Some(prob),
+                metaculus_prob: Some(prob_dec),
                 metaculus_forecasters: Some(forecasters),
                 ..CrossReferences::default()
             },
@@ -457,7 +459,7 @@ impl PredictionPlatform for MetaculusClient {
         &self,
         _market_id: &str,
         _side: Side,
-        _amount: f64,
+        _amount: Decimal,
     ) -> Result<TradeReceipt> {
         anyhow::bail!("Metaculus is read-only — betting not supported")
     }
@@ -468,8 +470,8 @@ impl PredictionPlatform for MetaculusClient {
     }
 
     /// Metaculus has no monetary balance.
-    async fn get_balance(&self) -> Result<f64> {
-        Ok(0.0)
+    async fn get_balance(&self) -> Result<Decimal> {
+        Ok(Decimal::ZERO)
     }
 
     /// Metaculus doesn't have traditional liquidity. We return forecaster
@@ -478,9 +480,9 @@ impl PredictionPlatform for MetaculusClient {
         // Could fetch individual question here, but for cross-referencing
         // purposes the data from fetch_markets() is sufficient.
         Ok(LiquidityInfo {
-            bid_depth: 0.0,
-            ask_depth: 0.0,
-            volume_24h: 0.0,
+            bid_depth: Decimal::ZERO,
+            ask_depth: Decimal::ZERO,
+            volume_24h: Decimal::ZERO,
         })
     }
 
@@ -727,12 +729,12 @@ mod tests {
         assert_eq!(market.id, "12345");
         assert_eq!(market.platform, "metaculus");
         assert_eq!(market.category, MarketCategory::Economics);
-        assert!((market.current_price_yes - 0.65).abs() < 1e-10);
-        assert!((market.current_price_no - 0.35).abs() < 1e-10);
-        assert_eq!(market.cross_refs.metaculus_prob, Some(0.65));
+        assert_eq!(market.current_price_yes, d(0.65));
+        assert_eq!(market.current_price_no, Decimal::ONE - d(0.65));
+        assert_eq!(market.cross_refs.metaculus_prob, Some(d(0.65)));
         assert_eq!(market.cross_refs.metaculus_forecasters, Some(50));
         assert!(market.cross_refs.manifold_prob.is_none());
-        assert_eq!(market.liquidity, 50.0); // forecasters as proxy
+        assert_eq!(market.liquidity, d(50.0)); // forecasters as proxy
         assert!(market.url.contains("12345"));
     }
 

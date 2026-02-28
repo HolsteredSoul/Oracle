@@ -12,12 +12,14 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, TimeZone, Utc};
 use reqwest::Client;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
 use super::PredictionPlatform;
 use crate::types::{
-    CrossReferences, LiquidityInfo, Market, MarketCategory, Position, Side, TradeReceipt,
+    d, CrossReferences, LiquidityInfo, Market, MarketCategory, Position, Side, TradeReceipt,
 };
 
 // ---------------------------------------------------------------------------
@@ -276,6 +278,7 @@ impl ManifoldClient {
     fn to_oracle_market(m: ManifoldLiteMarket) -> Market {
         let category = Self::classify(&m);
         let prob = m.probability.clamp(0.0, 1.0);
+        let prob_dec = d(prob);
         let deadline = m
             .close_time
             .map(Self::ms_to_datetime)
@@ -290,7 +293,7 @@ impl ManifoldClient {
             }
             _ => (0.0, 0.0),
         };
-        let liquidity = m.total_liquidity.unwrap_or(pool_yes + pool_no);
+        let liquidity = d(m.total_liquidity.unwrap_or(pool_yes + pool_no));
 
         Market {
             id: m.id,
@@ -298,15 +301,15 @@ impl ManifoldClient {
             question: m.question,
             description: String::new(), // LiteMarket doesn't include description
             category,
-            current_price_yes: prob,
-            current_price_no: 1.0 - prob,
-            volume_24h: m.volume24_hours,
+            current_price_yes: prob_dec,
+            current_price_no: Decimal::ONE - prob_dec,
+            volume_24h: d(m.volume24_hours),
             liquidity,
             deadline,
             resolution_criteria: String::new(), // Not in LiteMarket
             url: m.url,
             cross_refs: CrossReferences {
-                manifold_prob: Some(prob),
+                manifold_prob: Some(prob_dec),
                 ..CrossReferences::default()
             },
         }
@@ -391,7 +394,7 @@ impl PredictionPlatform for ManifoldClient {
         &self,
         market_id: &str,
         side: Side,
-        amount: f64,
+        amount: Decimal,
     ) -> Result<TradeReceipt> {
         let api_key = self
             .api_key
@@ -403,8 +406,9 @@ impl PredictionPlatform for ManifoldClient {
             Side::No => "NO",
         };
 
+        let amount_f64 = amount.to_f64().unwrap_or(0.0);
         let body = serde_json::json!({
-            "amount": amount,
+            "amount": amount_f64,
             "outcome": outcome,
             "contractId": market_id,
         });
@@ -443,8 +447,8 @@ impl PredictionPlatform for ManifoldClient {
             order_id = %order_id,
             market_id = %market_id,
             side = %side,
-            amount = amount,
-            prob_after = bet.prob_after,
+            amount = %amount,
+            prob_after = %bet.prob_after,
             "Manifold bet placed"
         );
 
@@ -453,9 +457,9 @@ impl PredictionPlatform for ManifoldClient {
             market_id: market_id.to_string(),
             platform: PLATFORM_NAME.to_string(),
             side,
-            amount: bet.amount,
-            fill_price: bet.prob_after,
-            fees: 0.0, // Manifold doesn't charge explicit fees on bets
+            amount: d(bet.amount),
+            fill_price: d(bet.prob_after),
+            fees: Decimal::ZERO, // Manifold doesn't charge explicit fees on bets
             timestamp,
         })
     }
@@ -471,7 +475,7 @@ impl PredictionPlatform for ManifoldClient {
     }
 
     /// Get Mana balance for the authenticated user.
-    async fn get_balance(&self) -> Result<f64> {
+    async fn get_balance(&self) -> Result<Decimal> {
         let api_key = self
             .api_key
             .as_ref()
@@ -496,7 +500,7 @@ impl PredictionPlatform for ManifoldClient {
             .await
             .context("Failed to parse Manifold user response")?;
 
-        Ok(user.balance)
+        Ok(d(user.balance))
     }
 
     /// Check liquidity for a specific Manifold market.
@@ -531,9 +535,9 @@ impl PredictionPlatform for ManifoldClient {
         };
 
         Ok(LiquidityInfo {
-            bid_depth: pool_yes,
-            ask_depth: pool_no,
-            volume_24h: market.volume24_hours,
+            bid_depth: d(pool_yes),
+            ask_depth: d(pool_no),
+            volume_24h: d(market.volume24_hours),
         })
     }
 
@@ -645,11 +649,11 @@ mod tests {
         assert_eq!(oracle.id, "test-id");
         assert_eq!(oracle.platform, "manifold");
         assert_eq!(oracle.category, MarketCategory::Economics);
-        assert!((oracle.current_price_yes - 0.5).abs() < 1e-10);
-        assert!((oracle.current_price_no - 0.5).abs() < 1e-10);
-        assert!((oracle.volume_24h - 50.0).abs() < 1e-10);
-        assert!((oracle.liquidity - 200.0).abs() < 1e-10);
-        assert_eq!(oracle.cross_refs.manifold_prob, Some(0.5));
+        assert_eq!(oracle.current_price_yes, d(0.5));
+        assert_eq!(oracle.current_price_no, Decimal::ONE - d(0.5));
+        assert_eq!(oracle.volume_24h, d(50.0));
+        assert_eq!(oracle.liquidity, d(200.0));
+        assert_eq!(oracle.cross_refs.manifold_prob, Some(d(0.5)));
         assert!(oracle.cross_refs.metaculus_prob.is_none());
     }
 
@@ -658,7 +662,7 @@ mod tests {
         let mut m = make_test_market("Test", vec![]);
         m.probability = 1.5; // Invalid, should clamp
         let oracle = ManifoldClient::to_oracle_market(m);
-        assert!((oracle.current_price_yes - 1.0).abs() < 1e-10);
+        assert_eq!(oracle.current_price_yes, d(1.0));
     }
 
     #[test]
@@ -667,7 +671,7 @@ mod tests {
         m.pool = None;
         m.total_liquidity = None;
         let oracle = ManifoldClient::to_oracle_market(m);
-        assert!((oracle.liquidity - 0.0).abs() < 1e-10);
+        assert_eq!(oracle.liquidity, Decimal::ZERO);
     }
 
     #[test]

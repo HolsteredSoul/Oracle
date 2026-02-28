@@ -5,6 +5,7 @@
 //! resolved at runtime via `std::env::var`.
 
 use anyhow::{Context, Result};
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -25,8 +26,8 @@ pub struct AppConfig {
 pub struct AgentConfig {
     pub name: String,
     pub scan_interval_secs: u64,
-    pub initial_bankroll: f64,
-    pub survival_threshold: f64,
+    pub initial_bankroll: Decimal,
+    pub survival_threshold: Decimal,
     pub currency: String,
 }
 
@@ -70,12 +71,12 @@ pub struct ManifoldConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct RiskConfig {
-    pub mispricing_threshold: f64,
-    pub kelly_multiplier: f64,
-    pub max_bet_pct: f64,
-    pub max_exposure_pct: f64,
+    pub mispricing_threshold: Decimal,
+    pub kelly_multiplier: Decimal,
+    pub max_bet_pct: Decimal,
+    pub max_exposure_pct: Decimal,
     pub min_liquidity_contracts: u64,
-    pub category_thresholds: HashMap<String, f64>,
+    pub category_thresholds: HashMap<String, Decimal>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -134,11 +135,11 @@ mod tests {
         if let Ok(cfg) = result {
             assert_eq!(cfg.agent.name, "ORACLE-001");
             assert_eq!(cfg.agent.scan_interval_secs, 600);
-            assert!(cfg.agent.initial_bankroll > 0.0);
+            assert!(cfg.agent.initial_bankroll > Decimal::ZERO);
             assert_eq!(cfg.llm.provider, "openrouter");
             assert!(cfg.platforms.forecastex.enabled);
-            assert!(cfg.risk.kelly_multiplier > 0.0);
-            assert!(cfg.risk.kelly_multiplier <= 1.0);
+            assert!(cfg.risk.kelly_multiplier > Decimal::ZERO);
+            assert!(cfg.risk.kelly_multiplier <= Decimal::ONE);
         }
         // If config.toml isn't found, that's acceptable in some test environments
     }
