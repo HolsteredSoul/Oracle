@@ -5,6 +5,8 @@
 //! Manifold paper-trading for strategy validation.
 
 use anyhow::{Context, Result};
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use tracing::{debug, info, warn};
 
 use crate::platforms::manifold::ManifoldClient;
@@ -21,8 +23,8 @@ use crate::types::{Side, TradeReceipt};
 pub struct ExecutionReport {
     pub executed: Vec<ExecutedTrade>,
     pub failed: Vec<FailedTrade>,
-    pub total_committed: f64,
-    pub total_commission: f64,
+    pub total_committed: Decimal,
+    pub total_commission: Decimal,
 }
 
 #[derive(Debug, Clone)]
@@ -30,7 +32,7 @@ pub struct ExecutedTrade {
     pub market_id: String,
     pub platform: String,
     pub side: Side,
-    pub amount: f64,
+    pub amount: Decimal,
     pub receipt: TradeReceipt,
 }
 
@@ -65,8 +67,8 @@ impl Executor {
         let mut report = ExecutionReport {
             executed: Vec::new(),
             failed: Vec::new(),
-            total_committed: 0.0,
-            total_commission: 0.0,
+            total_committed: Decimal::ZERO,
+            total_commission: Decimal::ZERO,
         };
 
         if bets.is_empty() {
@@ -81,8 +83,8 @@ impl Executor {
                     market_id = %bet.edge.market.id,
                     side = ?bet.edge.side,
                     amount = format!("${:.2}", bet.bet_amount),
-                    edge = format!("{:.1}%", bet.edge.edge * 100.0),
-                    kelly = format!("{:.2}%", bet.kelly_fraction * 100.0),
+                    edge = format!("{:.1}%", bet.edge.edge * dec!(100)),
+                    kelly = format!("{:.2}%", bet.kelly_fraction * dec!(100)),
                     "[DRY RUN] Would place bet"
                 );
                 report.executed.push(ExecutedTrade {
@@ -160,15 +162,15 @@ impl Executor {
 
 impl TradeReceipt {
     /// Create a dry-run receipt (no real execution).
-    pub fn dry_run(market_id: &str, amount: f64) -> Self {
+    pub fn dry_run(market_id: &str, amount: Decimal) -> Self {
         Self {
             order_id: format!("dry-run-{}", uuid::Uuid::new_v4()),
             market_id: market_id.to_string(),
             platform: "dry-run".to_string(),
             side: Side::Yes,
             amount,
-            fill_price: 0.0,
-            fees: 0.0,
+            fill_price: Decimal::ZERO,
+            fees: Decimal::ZERO,
             timestamp: chrono::Utc::now(),
         }
     }
@@ -185,7 +187,7 @@ mod tests {
     use crate::types::*;
     use chrono::{Duration, Utc};
 
-    fn make_sized_bet(market_id: &str, amount: f64) -> SizedBet {
+    fn make_sized_bet(market_id: &str, amount: Decimal) -> SizedBet {
         SizedBet {
             edge: Edge {
                 market: Market {
@@ -194,42 +196,42 @@ mod tests {
                     question: "Test?".into(),
                     description: String::new(),
                     category: MarketCategory::Weather,
-                    current_price_yes: 0.50,
-                    current_price_no: 0.50,
-                    volume_24h: 100.0,
-                    liquidity: 500.0,
+                    current_price_yes: dec!(0.50),
+                    current_price_no: dec!(0.50),
+                    volume_24h: dec!(100),
+                    liquidity: dec!(500),
                     deadline: Utc::now() + Duration::days(30),
                     resolution_criteria: String::new(),
                     url: String::new(),
                     cross_refs: Default::default(),
                 },
                 estimate: Estimate {
-                    probability: 0.65,
-                    confidence: 0.8,
+                    probability: dec!(0.65),
+                    confidence: dec!(0.8),
                     reasoning: String::new(),
                     tokens_used: 100,
-                    cost: 0.01,
+                    cost: dec!(0.01),
                 },
                 side: Side::Yes,
-                edge: 0.15,
-                signed_edge: 0.15,
+                edge: dec!(0.15),
+                signed_edge: dec!(0.15),
             },
-            kelly_fraction: 0.10,
-            bet_fraction: 0.05,
+            kelly_fraction: dec!(0.10),
+            bet_fraction: dec!(0.05),
             bet_amount: amount,
-            expected_value: amount * 0.15,
+            expected_value: amount * dec!(0.15),
         }
     }
 
     #[tokio::test]
     async fn test_dry_run_execution() {
         let executor = Executor::new(None, true);
-        let bets = vec![make_sized_bet("m1", 50.0), make_sized_bet("m2", 30.0)];
+        let bets = vec![make_sized_bet("m1", dec!(50)), make_sized_bet("m2", dec!(30))];
         let report = executor.execute_batch(&bets).await.unwrap();
 
         assert_eq!(report.executed.len(), 2);
         assert_eq!(report.failed.len(), 0);
-        assert!((report.total_committed - 80.0).abs() < 1e-10);
+        assert_eq!(report.total_committed, dec!(80));
         assert_eq!(report.executed[0].platform, "dry-run");
     }
 
@@ -243,16 +245,16 @@ mod tests {
 
     #[test]
     fn test_dry_run_receipt() {
-        let receipt = TradeReceipt::dry_run("test-market", 100.0);
+        let receipt = TradeReceipt::dry_run("test-market", dec!(100));
         assert!(receipt.order_id.starts_with("dry-run-"));
-        assert_eq!(receipt.amount, 100.0);
-        assert_eq!(receipt.fees, 0.0);
+        assert_eq!(receipt.amount, dec!(100));
+        assert_eq!(receipt.fees, Decimal::ZERO);
     }
 
     #[tokio::test]
     async fn test_no_manifold_no_execution() {
         let executor = Executor::new(None, false); // not dry-run, but no manifold client
-        let bets = vec![make_sized_bet("m1", 50.0)];
+        let bets = vec![make_sized_bet("m1", dec!(50))];
         let report = executor.execute_batch(&bets).await.unwrap();
         // No platforms available, nothing executed
         assert_eq!(report.executed.len(), 0);

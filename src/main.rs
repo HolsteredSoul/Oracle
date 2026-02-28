@@ -5,6 +5,7 @@
 //! scan→estimate→bet loop with graceful shutdown.
 
 use anyhow::Result;
+use rust_decimal::Decimal;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
@@ -22,7 +23,7 @@ use oracle::storage;
 use oracle::strategy::edge::{EdgeConfig, EdgeDetector};
 use oracle::strategy::kelly::{KellyCalculator, KellyConfig};
 use oracle::strategy::risk::{RiskConfig, RiskManager};
-use oracle::strategy::{DecisionRecord, StrategyOrchestrator};
+use oracle::strategy::StrategyOrchestrator;
 use oracle::types::{AgentState, AgentStatus};
 
 const BANNER: &str = r#"
@@ -52,7 +53,7 @@ async fn main() -> Result<()> {
     info!(
         agent_name = %cfg.agent.name,
         scan_interval_secs = cfg.agent.scan_interval_secs,
-        initial_bankroll = cfg.agent.initial_bankroll,
+        initial_bankroll = %cfg.agent.initial_bankroll,
         currency = %cfg.agent.currency,
         "ORACLE starting up"
     );
@@ -62,7 +63,7 @@ async fn main() -> Result<()> {
     let mut state = match storage::load_state(None)? {
         Some(s) => {
             info!(
-                bankroll = s.bankroll,
+                bankroll = %s.bankroll,
                 cycles = s.cycle_count,
                 trades = s.trades_placed,
                 "Resumed from saved state"
@@ -71,7 +72,7 @@ async fn main() -> Result<()> {
         }
         None => {
             let s = AgentState::new(cfg.agent.initial_bankroll);
-            info!(bankroll = s.bankroll, "Fresh start");
+            info!(bankroll = %s.bankroll, "Fresh start");
             s
         }
     };
@@ -144,12 +145,16 @@ async fn main() -> Result<()> {
     };
 
     // Strategy orchestrator (edge detection → Kelly sizing → risk approval)
+    let dec_006 = rust_decimal_macros::dec!(0.06);
+    let dec_008 = rust_decimal_macros::dec!(0.08);
+    let dec_010 = rust_decimal_macros::dec!(0.10);
+    let dec_012 = rust_decimal_macros::dec!(0.12);
     let mut orchestrator = StrategyOrchestrator::new(
         EdgeDetector::new(EdgeConfig {
-            weather_threshold: *cfg.risk.category_thresholds.get("weather").unwrap_or(&0.06),
-            sports_threshold: *cfg.risk.category_thresholds.get("sports").unwrap_or(&0.08),
-            economics_threshold: *cfg.risk.category_thresholds.get("economics").unwrap_or(&0.10),
-            politics_threshold: *cfg.risk.category_thresholds.get("politics").unwrap_or(&0.12),
+            weather_threshold: *cfg.risk.category_thresholds.get("weather").unwrap_or(&dec_006),
+            sports_threshold: *cfg.risk.category_thresholds.get("sports").unwrap_or(&dec_008),
+            economics_threshold: *cfg.risk.category_thresholds.get("economics").unwrap_or(&dec_010),
+            politics_threshold: *cfg.risk.category_thresholds.get("politics").unwrap_or(&dec_012),
             ..EdgeConfig::default()
         }),
         KellyCalculator::new(KellyConfig {
@@ -198,7 +203,7 @@ async fn main() -> Result<()> {
                             error!(error = %e, "Failed to save state");
                         }
                         if state.status == AgentStatus::Died {
-                            info!("Agent died. Final bankroll: ${:.2}", state.bankroll);
+                            info!("Agent died. Final bankroll: ${}", state.bankroll.round_dp(2));
                             break;
                         }
                     }
@@ -218,10 +223,10 @@ async fn main() -> Result<()> {
     // Save final state
     storage::save_state(&state, None)?;
     info!(
-        bankroll = format!("${:.2}", state.bankroll),
+        bankroll = %format!("${}", state.bankroll.round_dp(2)),
         cycles = state.cycle_count,
         trades = state.trades_placed,
-        pnl = format!("${:.2}", state.total_pnl),
+        pnl = %format!("${}", state.total_pnl.round_dp(2)),
         "ORACLE shut down cleanly."
     );
 
@@ -252,8 +257,8 @@ async fn run_cycle(
         let exec = oracle::engine::executor::ExecutionReport {
             executed: Vec::new(),
             failed: Vec::new(),
-            total_committed: 0.0,
-            total_commission: 0.0,
+            total_committed: Decimal::ZERO,
+            total_commission: Decimal::ZERO,
         };
         let mut report = Accountant::reconcile(state, &exec, &costs);
         report.markets_scanned = markets_scanned;
@@ -306,9 +311,9 @@ fn log_cycle_report(report: &CycleReport) {
         edges = report.edges_found,
         bets = report.bets_placed,
         failed = report.bets_failed,
-        committed = format!("${:.2}", report.total_committed),
-        costs = format!("${:.4}", report.cycle_costs.total()),
-        bankroll = format!("${:.2}", report.bankroll_after),
+        committed = %format!("${}", report.total_committed.round_dp(2)),
+        costs = %format!("${}", report.cycle_costs.total().round_dp(4)),
+        bankroll = %format!("${}", report.bankroll_after.round_dp(2)),
         status = ?report.status,
         "Cycle complete"
     );

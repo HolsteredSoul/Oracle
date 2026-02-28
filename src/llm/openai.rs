@@ -7,12 +7,14 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use super::LlmEstimator;
 use crate::llm::anthropic::AnthropicClient; // Reuse parsing utilities
-use crate::types::{DataContext, Estimate, Market};
+use crate::types::{d, DataContext, Estimate, Market};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -204,14 +206,14 @@ impl LlmEstimator for OpenAiClient {
         debug!(market_id = %market.id, model = %self.model, "OpenAI single estimate");
 
         let (response_text, tokens, cost) = self.call_api(system, &user_msg).await?;
-        let (probability, confidence, reasoning) = AnthropicClient::parse_estimate(&response_text)?;
+        let (prob_f64, conf_f64, reasoning) = AnthropicClient::parse_estimate(&response_text)?;
 
         Ok(Estimate {
-            probability,
-            confidence,
+            probability: d(prob_f64),
+            confidence: d(conf_f64),
             reasoning,
             tokens_used: tokens,
-            cost,
+            cost: d(cost),
         })
     }
 
@@ -249,11 +251,11 @@ impl LlmEstimator for OpenAiClient {
             match parsed.get(i).and_then(|p| p.as_ref()) {
                 Some((prob, conf)) => {
                     results.push(Estimate {
-                        probability: *prob,
-                        confidence: *conf,
+                        probability: d(*prob),
+                        confidence: d(*conf),
                         reasoning: format!("(batch estimate for {})", market.id),
                         tokens_used: tokens_per,
-                        cost: cost_per,
+                        cost: d(cost_per),
                     });
                 }
                 None => {
@@ -262,10 +264,10 @@ impl LlmEstimator for OpenAiClient {
                         Err(e) => {
                             results.push(Estimate {
                                 probability: market.current_price_yes,
-                                confidence: 0.1,
+                                confidence: dec!(0.1),
                                 reasoning: format!("Estimation failed: {e}"),
                                 tokens_used: 0,
-                                cost: 0.0,
+                                cost: Decimal::ZERO,
                             });
                         }
                     }
@@ -276,8 +278,8 @@ impl LlmEstimator for OpenAiClient {
         Ok(results)
     }
 
-    fn cost_per_call(&self) -> f64 {
-        (500.0 / 1000.0) * INPUT_COST_PER_1K + (300.0 / 1000.0) * OUTPUT_COST_PER_1K
+    fn cost_per_call(&self) -> Decimal {
+        d((500.0 / 1000.0) * INPUT_COST_PER_1K + (300.0 / 1000.0) * OUTPUT_COST_PER_1K)
     }
 
     fn model_name(&self) -> &str {
@@ -309,6 +311,6 @@ mod tests {
     #[test]
     fn test_cost_per_call_positive() {
         let client = OpenAiClient::new("key".into(), None, None).unwrap();
-        assert!(client.cost_per_call() > 0.0);
+        assert!(client.cost_per_call() > Decimal::ZERO);
     }
 }

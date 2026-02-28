@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Utc;
 use reqwest::Client;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use tracing::{debug, warn};
 
@@ -204,15 +205,15 @@ impl DataProvider for WeatherProvider {
             summary,
             freshness: Utc::now(),
             source: format!("open-meteo ({name})"),
-            cost: 0.0, // Free API
+            cost: Decimal::ZERO, // Free API
             metaculus_forecast: market.cross_refs.metaculus_prob,
             metaculus_forecasters: market.cross_refs.metaculus_forecasters,
             manifold_price: market.cross_refs.manifold_prob,
         })
     }
 
-    fn cost_per_call(&self) -> f64 {
-        0.0 // Open-Meteo is free
+    fn cost_per_call(&self) -> Decimal {
+        Decimal::ZERO // Open-Meteo is free
     }
 }
 
@@ -290,6 +291,6 @@ mod tests {
     fn test_provider_category() {
         let p = WeatherProvider::new().unwrap();
         assert_eq!(p.category(), MarketCategory::Weather);
-        assert_eq!(p.cost_per_call(), 0.0);
+        assert_eq!(p.cost_per_call(), Decimal::ZERO);
     }
 }

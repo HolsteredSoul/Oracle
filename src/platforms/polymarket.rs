@@ -12,12 +12,14 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
 use crate::platforms::PredictionPlatform;
 use crate::types::{
-    CrossReferences, LiquidityInfo, Market, MarketCategory, Position, Side, TradeReceipt,
+    d, CrossReferences, LiquidityInfo, Market, MarketCategory, Position, Side, TradeReceipt,
 };
 
 // ---------------------------------------------------------------------------
@@ -147,7 +149,7 @@ impl PolymarketClient {
         // Parse outcome prices: "[\"0.65\",\"0.35\"]" or "0.65, 0.35"
         let (price_yes, price_no) = Self::parse_outcome_prices(
             gm.outcome_prices.as_deref().unwrap_or(""),
-        ).unwrap_or((0.5, 0.5));
+        ).unwrap_or((dec!(0.5), dec!(0.5)));
 
         // Parse deadline
         let deadline = gm.end_date.as_deref()
@@ -163,8 +165,8 @@ impl PolymarketClient {
             })
             .unwrap_or_else(|| chrono::Utc::now() + chrono::Duration::days(365));
 
-        let volume = gm.volume.or(gm.volume_num).unwrap_or(0.0);
-        let liquidity = gm.liquidity.unwrap_or(0.0);
+        let volume = d(gm.volume.or(gm.volume_num).unwrap_or(0.0));
+        let liquidity = d(gm.liquidity.unwrap_or(0.0));
 
         // Categorize from tags
         let category = gm.tags.as_ref()
@@ -192,12 +194,12 @@ impl PolymarketClient {
 
     /// Parse outcome prices from Gamma's string format.
     /// Handles: "[\"0.65\",\"0.35\"]", "0.65, 0.35", etc.
-    pub fn parse_outcome_prices(s: &str) -> Option<(f64, f64)> {
+    pub fn parse_outcome_prices(s: &str) -> Option<(Decimal, Decimal)> {
         let cleaned = s.replace(['[', ']', '"', '\\'], "");
         let parts: Vec<&str> = cleaned.split(',').map(|p| p.trim()).collect();
         if parts.len() >= 2 {
-            let yes = parts[0].parse::<f64>().ok()?;
-            let no = parts[1].parse::<f64>().ok()?;
+            let yes = parts[0].parse::<Decimal>().ok()?;
+            let no = parts[1].parse::<Decimal>().ok()?;
             Some((yes, no))
         } else {
             None
@@ -273,12 +275,14 @@ impl PolymarketClient {
 
     /// Filter markets by volume and liquidity thresholds.
     pub fn filter_markets(&self, markets: Vec<Market>) -> Vec<Market> {
+        let min_vol = d(self.min_volume);
+        let min_liq = d(self.min_liquidity);
         markets.into_iter().filter(|m| {
-            m.volume_24h >= self.min_volume
-                && m.liquidity >= self.min_liquidity
+            m.volume_24h >= min_vol
+                && m.liquidity >= min_liq
                 && m.deadline > chrono::Utc::now()
-                && m.current_price_yes > 0.02
-                && m.current_price_yes < 0.98
+                && m.current_price_yes > dec!(0.02)
+                && m.current_price_yes < dec!(0.98)
         }).collect()
     }
 }
@@ -305,7 +309,7 @@ impl PredictionPlatform for PolymarketClient {
         &self,
         market_id: &str,
         side: Side,
-        amount: f64,
+        amount: Decimal,
     ) -> Result<TradeReceipt> {
         // TODO: Implement CLOB order placement.
         // Requires:
@@ -320,7 +324,7 @@ impl PredictionPlatform for PolymarketClient {
         warn!(
             market_id = %market_id,
             side = ?side,
-            amount,
+            amount = %amount,
             "Polymarket execution not yet wired — returning dry-run receipt"
         );
         Ok(TradeReceipt::dry_run(market_id, amount))
@@ -331,17 +335,17 @@ impl PredictionPlatform for PolymarketClient {
         Ok(Vec::new())
     }
 
-    async fn get_balance(&self) -> Result<f64> {
+    async fn get_balance(&self) -> Result<Decimal> {
         // TODO: Query Polygon RPC for USDC balance of wallet
-        Ok(0.0)
+        Ok(Decimal::ZERO)
     }
 
     async fn check_liquidity(&self, market_id: &str) -> Result<LiquidityInfo> {
         // TODO: Query CLOB order book for bid/ask depth
         Ok(LiquidityInfo {
-            bid_depth: 0.0,
-            ask_depth: 0.0,
-            volume_24h: 0.0,
+            bid_depth: Decimal::ZERO,
+            ask_depth: Decimal::ZERO,
+            volume_24h: Decimal::ZERO,
         })
     }
 
@@ -365,15 +369,15 @@ mod tests {
     #[test]
     fn test_parse_outcome_prices_json_format() {
         let (yes, no) = PolymarketClient::parse_outcome_prices("[\"0.65\",\"0.35\"]").unwrap();
-        assert!((yes - 0.65).abs() < 1e-10);
-        assert!((no - 0.35).abs() < 1e-10);
+        assert_eq!(yes, dec!(0.65));
+        assert_eq!(no, dec!(0.35));
     }
 
     #[test]
     fn test_parse_outcome_prices_simple_format() {
         let (yes, no) = PolymarketClient::parse_outcome_prices("0.72, 0.28").unwrap();
-        assert!((yes - 0.72).abs() < 1e-10);
-        assert!((no - 0.28).abs() < 1e-10);
+        assert_eq!(yes, dec!(0.72));
+        assert_eq!(no, dec!(0.28));
     }
 
     #[test]
@@ -512,7 +516,7 @@ mod tests {
         let market = PolymarketClient::convert_market(&gm).unwrap();
         assert_eq!(market.id, "0xabc123");
         assert_eq!(market.platform, "polymarket");
-        assert!((market.current_price_yes - 0.72).abs() < 1e-10);
+        assert_eq!(market.current_price_yes, dec!(0.72));
         assert!(matches!(market.category, MarketCategory::Economics));
         assert!(market.url.contains("bitcoin-100k"));
     }
@@ -532,10 +536,10 @@ mod tests {
                 question: "Good market".into(),
                 description: String::new(),
                 category: MarketCategory::Politics,
-                current_price_yes: 0.50,
-                current_price_no: 0.50,
-                volume_24h: 5000.0,
-                liquidity: 2000.0,
+                current_price_yes: dec!(0.50),
+                current_price_no: dec!(0.50),
+                volume_24h: dec!(5000),
+                liquidity: dec!(2000),
                 deadline: chrono::Utc::now() + chrono::Duration::days(30),
                 resolution_criteria: String::new(),
                 url: String::new(),
@@ -547,10 +551,10 @@ mod tests {
                 question: "Low volume".into(),
                 description: String::new(),
                 category: MarketCategory::Politics,
-                current_price_yes: 0.50,
-                current_price_no: 0.50,
-                volume_24h: 100.0, // too low
-                liquidity: 2000.0,
+                current_price_yes: dec!(0.50),
+                current_price_no: dec!(0.50),
+                volume_24h: dec!(100), // too low
+                liquidity: dec!(2000),
                 deadline: chrono::Utc::now() + chrono::Duration::days(30),
                 resolution_criteria: String::new(),
                 url: String::new(),
@@ -562,10 +566,10 @@ mod tests {
                 question: "Nearly resolved".into(),
                 description: String::new(),
                 category: MarketCategory::Politics,
-                current_price_yes: 0.99, // too close to 1.0
-                current_price_no: 0.01,
-                volume_24h: 5000.0,
-                liquidity: 2000.0,
+                current_price_yes: dec!(0.99), // too close to 1.0
+                current_price_no: dec!(0.01),
+                volume_24h: dec!(5000),
+                liquidity: dec!(2000),
                 deadline: chrono::Utc::now() + chrono::Duration::days(30),
                 resolution_criteria: String::new(),
                 url: String::new(),

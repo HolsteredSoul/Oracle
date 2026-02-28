@@ -9,6 +9,9 @@
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use tracing::{debug, info, warn};
 
 use crate::platforms::manifold::ManifoldClient;
@@ -26,7 +29,7 @@ use crate::types::{CrossReferences, Market};
 const MATCH_THRESHOLD: f64 = 0.45;
 
 /// Minimum liquidity (or forecaster count for Metaculus) to keep a market.
-const MIN_LIQUIDITY: f64 = 5.0;
+const MIN_LIQUIDITY: Decimal = dec!(5.0);
 
 /// Maximum hours until deadline — skip markets closing too far out
 /// (reduces noise from long-dated, low-activity markets).
@@ -325,7 +328,7 @@ impl MarketRouter {
 
                 // Price sanity: skip markets at extreme probabilities
                 // (very little edge to be found at 1% or 99%)
-                if m.current_price_yes < 0.02 || m.current_price_yes > 0.98 {
+                if m.current_price_yes < dec!(0.02) || m.current_price_yes > dec!(0.98) {
                     return false;
                 }
 
@@ -362,13 +365,16 @@ impl MarketRouter {
         }
 
         // Liquidity score (log scale to avoid mega-liquid markets dominating)
-        score += (market.liquidity + 1.0).ln() * 5.0;
+        let liq_f64 = market.liquidity.to_f64().unwrap_or(0.0);
+        score += (liq_f64 + 1.0).ln() * 5.0;
 
         // Volume bonus
-        score += (market.volume_24h + 1.0).ln() * 3.0;
+        let vol_f64 = market.volume_24h.to_f64().unwrap_or(0.0);
+        score += (vol_f64 + 1.0).ln() * 3.0;
 
         // Probability centrality: markets near 50% have the most room for edge
-        let centrality = 1.0 - (2.0 * (market.current_price_yes - 0.5)).abs();
+        let price_f64 = market.current_price_yes.to_f64().unwrap_or(0.5);
+        let centrality = 1.0 - (2.0 * (price_f64 - 0.5)).abs();
         score += centrality * 10.0;
 
         score
@@ -382,7 +388,7 @@ impl MarketRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::MarketCategory;
+    use crate::types::{d, MarketCategory};
     use chrono::Duration;
 
     // -- Text similarity tests -------------------------------------------
@@ -460,10 +466,10 @@ mod tests {
             question: question.to_string(),
             description: String::new(),
             category,
-            current_price_yes: prob,
-            current_price_no: 1.0 - prob,
-            volume_24h: 100.0,
-            liquidity,
+            current_price_yes: d(prob),
+            current_price_no: d(1.0 - prob),
+            volume_24h: dec!(100),
+            liquidity: d(liquidity),
             deadline: Utc::now() + Duration::hours(hours_to_deadline as i64),
             resolution_criteria: String::new(),
             url: format!("https://example.com/{id}"),
@@ -479,7 +485,7 @@ mod tests {
         forecasters: u32,
     ) -> Market {
         let mut m = make_market(id, "metaculus", question, category, prob, forecasters as f64, 720.0);
-        m.cross_refs.metaculus_prob = Some(prob);
+        m.cross_refs.metaculus_prob = Some(d(prob));
         m.cross_refs.metaculus_forecasters = Some(forecasters);
         m
     }
@@ -507,7 +513,7 @@ mod tests {
 
         MarketRouter::cross_reference(&mut manifold, &metaculus);
 
-        assert_eq!(manifold[0].cross_refs.metaculus_prob, Some(0.68));
+        assert_eq!(manifold[0].cross_refs.metaculus_prob, Some(d(0.68)));
         assert_eq!(manifold[0].cross_refs.metaculus_forecasters, Some(150));
     }
 
@@ -641,7 +647,7 @@ mod tests {
     fn test_priority_cross_referenced_higher() {
         let mut plain = make_market("a", "manifold", "Q?", MarketCategory::Politics, 0.5, 100.0, 720.0);
         let mut xref = make_market("b", "manifold", "Q?", MarketCategory::Politics, 0.5, 100.0, 720.0);
-        xref.cross_refs.metaculus_prob = Some(0.55);
+        xref.cross_refs.metaculus_prob = Some(d(0.55));
         xref.cross_refs.metaculus_forecasters = Some(100);
 
         assert!(

@@ -25,6 +25,8 @@ thiserror = "1"
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
+rust_decimal = { version = "1.36", features = ["serde-float"] }
+rust_decimal_macros = "1.36"
 
 [dev-dependencies]
 tokio-test = "0.4"

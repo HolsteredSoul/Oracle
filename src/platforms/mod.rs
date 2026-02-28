@@ -12,6 +12,7 @@ pub mod polymarket;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use rust_decimal::Decimal;
 
 use crate::types::{LiquidityInfo, Market, Position, Side, TradeReceipt};
 
@@ -30,14 +31,14 @@ pub trait PredictionPlatform: Send + Sync {
         &self,
         market_id: &str,
         side: Side,
-        amount: f64,
+        amount: Decimal,
     ) -> Result<TradeReceipt>;
 
     /// Get current open positions on this platform.
     async fn get_positions(&self) -> Result<Vec<Position>>;
 
     /// Get available balance on this platform.
-    async fn get_balance(&self) -> Result<f64>;
+    async fn get_balance(&self) -> Result<Decimal>;
 
     /// Check liquidity for a specific market.
     async fn check_liquidity(&self, market_id: &str) -> Result<LiquidityInfo>;

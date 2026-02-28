@@ -10,6 +10,7 @@ pub mod news;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use rust_decimal::Decimal;
 
 use crate::types::{DataContext, Market, MarketCategory};
 
@@ -26,5 +27,5 @@ pub trait DataProvider: Send + Sync {
     async fn fetch_context(&self, market: &Market) -> Result<DataContext>;
 
     /// Cost per API call in USD (for survival accounting).
-    fn cost_per_call(&self) -> f64;
+    fn cost_per_call(&self) -> Decimal;
 }

@@ -10,12 +10,15 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
 use super::LlmEstimator;
 use crate::llm::anthropic::AnthropicClient; // Reuse prompt templates + parsing
-use crate::types::{DataContext, Estimate, Market};
+use crate::types::{d, DataContext, Estimate, Market};
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -42,6 +45,7 @@ const BASE_BACKOFF_MS: u64 = 1000;
 // ---------------------------------------------------------------------------
 
 /// Returns (input_cost_per_1k, output_cost_per_1k) for known models.
+/// Kept as f64 internally for per-token cost calculation.
 fn model_costs(model: &str) -> (f64, f64) {
     match model {
         // Claude 4 Sonnet
@@ -331,24 +335,28 @@ impl LlmEstimator for OpenRouterClient {
             .await
             .context("OpenRouter API call failed")?;
 
-        let (probability, confidence, reasoning) = AnthropicClient::parse_estimate(&response_text)
+        let (prob_f64, conf_f64, reasoning) = AnthropicClient::parse_estimate(&response_text)
             .context("Failed to parse estimate from LLM response")?;
 
+        let probability = d(prob_f64);
+        let confidence = d(conf_f64);
+        let cost = d(cost);
+
         // Echo detection
-        let echo_threshold = 0.02;
+        let echo_threshold = dec!(0.02);
         if (probability - market.current_price_yes).abs() < echo_threshold {
             warn!(
                 market_id = %market.id,
-                estimate = probability,
-                market_price = market.current_price_yes,
+                estimate = %probability,
+                market_price = %market.current_price_yes,
                 "Possible echo: estimate very close to market price"
             );
         }
 
         info!(
             market_id = %market.id,
-            probability = format!("{:.1}%", probability * 100.0),
-            confidence = format!("{:.0}%", confidence * 100.0),
+            probability = format!("{:.1}%", (probability * dec!(100)).to_f64().unwrap_or(0.0)),
+            confidence = format!("{:.0}%", (confidence * dec!(100)).to_f64().unwrap_or(0.0)),
             tokens,
             cost = format!("${:.4}", cost),
             "Estimate complete (OpenRouter)"
@@ -403,11 +411,11 @@ impl LlmEstimator for OpenRouterClient {
             match parsed.get(i).and_then(|p| p.as_ref()) {
                 Some((prob, conf)) => {
                     results.push(Estimate {
-                        probability: *prob,
-                        confidence: *conf,
+                        probability: d(*prob),
+                        confidence: d(*conf),
                         reasoning: format!("(batch estimate for {})", market.id),
                         tokens_used: tokens_per_market,
-                        cost: cost_per_market,
+                        cost: d(cost_per_market),
                     });
                 }
                 None => {
@@ -426,10 +434,10 @@ impl LlmEstimator for OpenRouterClient {
                             );
                             results.push(Estimate {
                                 probability: market.current_price_yes,
-                                confidence: 0.1,
+                                confidence: dec!(0.1),
                                 reasoning: format!("Estimation failed: {e}"),
                                 tokens_used: 0,
-                                cost: 0.0,
+                                cost: Decimal::ZERO,
                             });
                         }
                     }
@@ -450,10 +458,10 @@ impl LlmEstimator for OpenRouterClient {
         Ok(results)
     }
 
-    fn cost_per_call(&self) -> f64 {
+    fn cost_per_call(&self) -> Decimal {
         let (input_cost, output_cost) = model_costs(&self.primary_model);
         // Approximate: ~500 input tokens + ~300 output tokens
-        (500.0 / 1000.0) * input_cost + (300.0 / 1000.0) * output_cost
+        d((500.0 / 1000.0) * input_cost + (300.0 / 1000.0) * output_cost)
     }
 
     fn model_name(&self) -> &str {
@@ -499,7 +507,7 @@ mod tests {
     #[test]
     fn test_cost_per_call_positive() {
         let client = OpenRouterClient::new("key".into(), None, None, None).unwrap();
-        assert!(client.cost_per_call() > 0.0);
+        assert!(client.cost_per_call() > Decimal::ZERO);
     }
 
     #[test]

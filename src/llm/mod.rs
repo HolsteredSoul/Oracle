@@ -10,6 +10,7 @@ pub mod grok;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use rust_decimal::Decimal;
 
 use crate::types::{DataContext, Estimate, Market};
 
@@ -34,7 +35,7 @@ pub trait LlmEstimator: Send + Sync {
     ) -> Result<Vec<Estimate>>;
 
     /// Cost per individual API call in USD.
-    fn cost_per_call(&self) -> f64;
+    fn cost_per_call(&self) -> Decimal;
 
     /// Model identifier string.
     fn model_name(&self) -> &str;

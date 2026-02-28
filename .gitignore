@@ -1,4 +1,6 @@
 /target
+.cargo/
 oracle.db
 .env
 *.log
+oracle_state.json

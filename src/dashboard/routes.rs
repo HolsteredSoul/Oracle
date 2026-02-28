@@ -1,13 +1,16 @@
 //! Dashboard API route handlers.
 //!
 //! All endpoints return JSON. State is shared via `Arc<DashboardState>`.
+//! Response structs keep f64 for JSON API responses (display-only).
+//! AgentState fields are Decimal — we convert to f64 in the handlers.
 
 use axum::{extract::State, http::StatusCode, Json};
+use rust_decimal::prelude::*;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::types::{AgentState, AgentStatus};
+use crate::types::AgentState;
 
 // ---------------------------------------------------------------------------
 // Shared state
@@ -23,7 +26,7 @@ pub struct DashboardState {
 
 impl DashboardState {
     pub fn new(initial_state: AgentState) -> Self {
-        let initial_balance = initial_state.bankroll;
+        let initial_balance = initial_state.bankroll.to_f64().unwrap_or(0.0);
         Self {
             agent: RwLock::new(initial_state),
             cycle_log: RwLock::new(Vec::new()),
@@ -37,7 +40,7 @@ impl DashboardState {
 }
 
 // ---------------------------------------------------------------------------
-// Response types
+// Response types (f64 for JSON serialization — display only)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize)]
@@ -129,19 +132,26 @@ pub async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
         0.0
     };
 
+    let bankroll = agent.bankroll.to_f64().unwrap_or(0.0);
+    let peak_bankroll = agent.peak_bankroll.to_f64().unwrap_or(0.0);
+    let total_pnl = agent.total_pnl.to_f64().unwrap_or(0.0);
+    let total_api_costs = agent.total_api_costs.to_f64().unwrap_or(0.0);
+    let total_ib_commissions = agent.total_ib_commissions.to_f64().unwrap_or(0.0);
+    let total_costs = agent.total_costs().to_f64().unwrap_or(0.0);
+
     Json(StatusResponse {
         status: format!("{}", agent.status),
-        bankroll: agent.bankroll,
-        peak_bankroll: agent.peak_bankroll,
-        total_pnl: agent.total_pnl,
+        bankroll,
+        peak_bankroll,
+        total_pnl,
         cycle_count: agent.cycle_count,
         trades_placed: agent.trades_placed,
         trades_won: agent.trades_won,
         trades_lost: agent.trades_lost,
         win_rate,
-        total_api_costs: agent.total_api_costs,
-        total_ib_commissions: agent.total_ib_commissions,
-        total_costs: agent.total_costs(),
+        total_api_costs,
+        total_ib_commissions,
+        total_costs,
         uptime_secs: uptime,
     })
 }
@@ -170,14 +180,18 @@ pub async fn get_trades(State(state): State<AppState>) -> Json<Vec<TradeLogEntry
 /// GET /api/costs
 pub async fn get_costs(State(state): State<AppState>) -> Json<CostsResponse> {
     let agent = state.agent.read().await;
+    let total_api_costs = agent.total_api_costs.to_f64().unwrap_or(0.0);
+    let total_ib_commissions = agent.total_ib_commissions.to_f64().unwrap_or(0.0);
+    let total_costs = agent.total_costs().to_f64().unwrap_or(0.0);
+
     Json(CostsResponse {
-        total_api_costs: agent.total_api_costs,
-        total_ib_commissions: agent.total_ib_commissions,
-        total_costs: agent.total_costs(),
+        total_api_costs,
+        total_ib_commissions,
+        total_costs,
         cost_breakdown: CostBreakdown {
-            llm: agent.total_api_costs * 0.8,    // Approximate split
-            data: agent.total_api_costs * 0.2,
-            ib_commissions: agent.total_ib_commissions,
+            llm: total_api_costs * 0.8,    // Approximate split
+            data: total_api_costs * 0.2,
+            ib_commissions: total_ib_commissions,
         },
     })
 }
@@ -185,9 +199,12 @@ pub async fn get_costs(State(state): State<AppState>) -> Json<CostsResponse> {
 /// GET /api/metrics
 pub async fn get_metrics(State(state): State<AppState>) -> Json<MetricsResponse> {
     let agent = state.agent.read().await;
-    let initial = agent.bankroll - agent.total_pnl + agent.total_costs();
+    let bankroll = agent.bankroll.to_f64().unwrap_or(0.0);
+    let total_pnl = agent.total_pnl.to_f64().unwrap_or(0.0);
+    let total_costs = agent.total_costs().to_f64().unwrap_or(0.0);
+    let initial = bankroll - total_pnl + total_costs;
     let roi = if initial > 0.0 {
-        ((agent.bankroll - initial) / initial) * 100.0
+        ((bankroll - initial) / initial) * 100.0
     } else {
         0.0
     };
@@ -201,7 +218,7 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<MetricsResponse>
         trades_placed: agent.trades_placed,
         trades_won: agent.trades_won,
         trades_lost: agent.trades_lost,
-        total_pnl: agent.total_pnl,
+        total_pnl,
         roi_pct: roi,
         cycles_run: agent.cycle_count,
     })
@@ -219,10 +236,11 @@ pub async fn health() -> StatusCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal_macros::dec;
 
     #[test]
     fn test_dashboard_state_creation() {
-        let state = DashboardState::new(AgentState::new(100.0));
+        let state = DashboardState::new(AgentState::new(dec!(100)));
         // Just verify it constructs without panic
         assert!(true);
     }
@@ -294,7 +312,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_status_handler() {
-        let state = Arc::new(DashboardState::new(AgentState::new(100.0)));
+        let state = Arc::new(DashboardState::new(AgentState::new(dec!(100))));
         let Json(resp) = get_status(State(state)).await;
         assert!((resp.bankroll - 100.0).abs() < 1e-10);
         assert!(resp.status.contains("ALIVE"));
@@ -302,14 +320,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_cycles_empty() {
-        let state = Arc::new(DashboardState::new(AgentState::new(100.0)));
+        let state = Arc::new(DashboardState::new(AgentState::new(dec!(100))));
         let Json(cycles) = get_cycles(State(state)).await;
         assert!(cycles.is_empty());
     }
 
     #[tokio::test]
     async fn test_get_balance_history_initial() {
-        let state = Arc::new(DashboardState::new(AgentState::new(50.0)));
+        let state = Arc::new(DashboardState::new(AgentState::new(dec!(50))));
         let Json(history) = get_balance_history(State(state)).await;
         assert_eq!(history.len(), 1);
         assert!((history[0].bankroll - 50.0).abs() < 1e-10);
@@ -317,7 +335,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_metrics_no_trades() {
-        let state = Arc::new(DashboardState::new(AgentState::new(100.0)));
+        let state = Arc::new(DashboardState::new(AgentState::new(dec!(100))));
         let Json(metrics) = get_metrics(State(state)).await;
         assert_eq!(metrics.win_rate, 0.0);
         assert_eq!(metrics.trades_placed, 0);
