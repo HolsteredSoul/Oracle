@@ -1,16 +1,18 @@
-﻿# ORACLE: Autonomous Prediction Market AI Agent
+# ORACLE: Autonomous Prediction Market AI Agent
 
-## Whitepaper v1.2
+## Whitepaper v2.0
 
 ---
 
 ## Abstract
 
-ORACLE (Optimized Risk-Adjusted Cross-platform Leveraged Engine) is an autonomous AI agent built in Rust that operates across prediction market and forecasting platforms — Polymarket for execution via CLOB orders, Metaculus for crowd-sourced probability cross-references, and Manifold Markets for paper-trading validation — to detect mispricings, estimate fair-value probabilities via LLM reasoning, and size positions using Kelly-criterion methodology. The agent tracks its operational costs (LLM inference, commissions, API calls) and halts when its bankroll is depleted. The architecture draws on research into systematic edge detection and disciplined risk management in prediction markets.
+ORACLE (Optimized Risk-Adjusted Cross-platform Leveraged Engine) is an autonomous AI agent built in Rust that operates across prediction market and forecasting platforms — Betfair Exchange for real-money execution, Manifold Markets for paper-trading validation and backtesting, Metaculus for crowd-sourced probability cross-references, and optionally IBKR ForecastTrader for secondary event-contract execution — to detect mispricings, estimate fair-value probabilities via LLM reasoning, and size positions using Kelly-criterion methodology. The agent tracks its operational costs (LLM inference, commissions, API calls) and halts when its bankroll is depleted. The architecture draws on research into systematic edge detection and disciplined risk management in prediction markets.
 
 This whitepaper defines the agent's theory, architecture, risk framework, and operational model. The accompanying **Development Plan** provides the iterative build roadmap.
 
-**Execution venue**: Polymarket is the primary execution venue, offering liquidity across politics, economics, crypto, sports, culture, and more. Trading is conducted via the Polymarket CLOB (Central Limit Order Book) API on Polygon, settling in USDC. Metaculus and Manifold serve as cross-reference signals for crowd forecasts and play-money sentiment.
+**LLM layer**: All LLM calls route through OpenRouter with a single API key. Claude 4 Sonnet is the primary model for best probabilistic reasoning and calibration; Grok-4.1-fast is the cheap/fast fallback with automatic failover.
+
+**Execution venues**: Betfair Exchange is the primary live target. Manifold Markets handles all testing, paper trading, and backtesting at zero cost. IBKR ForecastTrader/Event Contracts is an optional secondary module.
 
 ---
 
@@ -20,7 +22,7 @@ Prediction markets are informationally efficient — but not perfectly so. Mispr
 
 - **Temporal lag**: Markets react slowly to breaking news, data releases (e.g., weather forecasts, injury reports), and financial signals.
 - **Cognitive bias**: Human participants systematically over/underweight tail risks, round probabilities, and anchor to stale prices.
-- **Fragmentation**: Different platforms and forecasting communities price the same underlying event differently. Polymarket (deep liquidity, real-money) diverges from Metaculus (crowd wisdom, no monetary skin-in-game) which diverges from Manifold (play-money, retail sentiment).
+- **Fragmentation**: Different platforms and forecasting communities price the same underlying event differently. Betfair (deep liquidity, real-money) diverges from Metaculus (crowd wisdom, no monetary skin-in-game) which diverges from Manifold (play-money, retail sentiment).
 - **Liquidity asymmetry**: Thin markets offer outsized edges but require careful sizing.
 
 An autonomous agent that continuously scans, estimates, cross-references, and bets can systematically harvest these edges faster and more consistently than manual traders.
@@ -31,7 +33,9 @@ An autonomous agent that continuously scans, estimates, cross-references, and be
 
 ### 2.1 Fair-Value Estimation via LLM
 
-The agent uses an LLM (Claude, GPT-4, or Grok — configurable) to estimate the "true" probability of each market outcome. The LLM receives:
+The agent uses an LLM routed through OpenRouter to estimate the "true" probability of each market outcome. The primary model is Claude 4 Sonnet (best probabilistic reasoning and calibration), with automatic fallback to Grok-4.1-fast (cheap/fast) when the primary is unavailable.
+
+The LLM receives:
 
 1. **Market description** — the question, resolution criteria, deadline.
 2. **Real-time data** — domain-specific signals fetched from external APIs (weather, sports, economics, news).
@@ -41,7 +45,7 @@ The agent uses an LLM (Claude, GPT-4, or Grok — configurable) to estimate the 
 **Sample LLM prompt:**
 
 ```
-You are a calibrated probability estimator. Based on the following information, 
+You are a calibrated probability estimator. Based on the following information,
 estimate the probability (0.00 to 1.00) of the stated outcome occurring.
 
 MARKET: "{market_question}"
@@ -53,7 +57,7 @@ REAL-TIME DATA:
 
 CROSS-REFERENCE:
 - Metaculus community forecast: {metaculus_prob} (N={metaculus_forecasters} forecasters)
-- Polymarket current price: {polymarket_price}
+- Betfair current price: {betfair_price}
 - Manifold play-money price: {manifold_price}
 
 INSTRUCTIONS:
@@ -65,6 +69,8 @@ INSTRUCTIONS:
 
 PROBABILITY:
 ```
+
+Every call returns a typed `Estimate` struct containing `probability`, `confidence` (0–100), `reasoning`, `sources`, and `uncertainty_flags`. When confidence is below 65, the agent triggers automatic deeper tool calls (search, news scrape) for agentic escalation.
 
 ### 2.2 Mispricing Detection
 
@@ -98,7 +104,7 @@ kelly_fraction = edge / odds
 bet_size = kelly_fraction * bankroll * kelly_multiplier
 ```
 
-Where `kelly_multiplier` defaults to **0.25** (quarter-Kelly) for conservative growth, and bet size is capped at **6% of bankroll** maximum.
+Where `kelly_multiplier` defaults to **0.25** (quarter-Kelly) for conservative growth, and bet size is capped at **1.5% per position** with **max 10–12% total exposure**.
 
 **Why quarter-Kelly?** Full Kelly is theoretically optimal for geometric growth but assumes perfect edge estimation. Since LLM estimates have uncertainty, quarter-Kelly sacrifices ~50% of growth rate for ~75% reduction in variance — critical for survival.
 
@@ -108,11 +114,10 @@ After each 10-minute cycle, the agent deducts operational costs:
 
 | Cost Component | Estimated per Cycle | Per Day (144 cycles) |
 |----------------|--------------------|--------------------|
-| LLM inference (300 markets × ~500 tokens) | $0.10 - $0.35 | $14.40 - $50.40 |
+| LLM inference via OpenRouter | $0.10 - $0.35 | $14.40 - $50.40 |
 | Data API calls (weather, sports, economics) | $0.01 - $0.05 | $1.44 - $7.20 |
-| Polymarket fees (per trade) | ~2% of proceeds | Variable |
-| Polygon gas fees | ~$0.01 per transaction | Negligible |
-| **Total estimated** | **$0.12 - $0.47** | **$16.00 - $68.00** |
+| Betfair commissions (per trade) | ~2-5% of profit | Variable |
+| **Total estimated** | **$0.12 - $0.47** | **$16.00 - $58.00** |
 
 If `balance <= 0` after cost deduction, the agent logs its final state and halts. This creates a natural feedback loop: the agent must generate returns exceeding its operational costs to continue running.
 
@@ -121,6 +126,7 @@ If `balance <= 0` after cost deduction, the agent logs its final state and halts
 - Cache data across markets sharing the same category
 - Skip markets with insufficient liquidity (no edge worth the inference cost)
 - Progressive scanning: quick filter → deep analysis only for candidates
+- Automatic fallback to cheaper model (Grok) when primary is unavailable
 
 ---
 
@@ -128,37 +134,27 @@ If `balance <= 0` after cost deduction, the agent logs its final state and halts
 
 ### 3.1 Platform Comparison
 
-| Feature | Polymarket | Metaculus | Manifold |
-|---------|--------------|-----------|----------|
-| **Type** | Prediction exchange | Crowd forecasting | Play-money prediction |
-| **Settlement** | USDC (on-chain) | Reputation points | Mana (play currency) |
-| **Fees** | ~$0.25-$1.00/trade | Free | Free |
-| **Liquidity** | Moderate, event-driven | N/A (no trading) | Variable, play-money |
-| **API** | CLOB REST + Gamma REST | REST API | REST API |
-| **Edge opportunity** | Primary execution | Reference only | Validation + signal |
-| **Agent role** | Scan + Bet | Cross-reference | Paper trade + validate |
-
-#### 3.1.1 Platform Selection Rationale
-
-Polymarket is the largest prediction market by liquidity and market breadth, operating on Polygon with USDC settlement. Alternative platforms were evaluated:
-
-- **Kalshi**: US-regulated (CFTC), narrower market selection and lower liquidity than Polymarket.
-- **Betfair**: Betting exchange structured as back/lay odds, not binary contracts. Narrow category depth, incompatible market structure for binary event contract strategies.
-- **ForecastEx (IB)**: Thin markets, low liquidity. Available as optional fallback via Phase 2A.
-
-Polymarket is the primary execution venue due to its superior liquidity, market breadth, and 24/7 availability. The trait-based architecture allows adding additional platforms as needed.
+| Feature | Betfair Exchange | Manifold | Metaculus | IBKR ForecastTrader |
+|---------|-----------------|----------|-----------|---------------------|
+| **Type** | Betting exchange | Play-money prediction | Crowd forecasting | Event contracts |
+| **Settlement** | GBP/AUD/EUR | Mana (play currency) | Reputation points | USD |
+| **Fees** | 2-5% of profit | Free | Free | ~$0.50-$1.00/trade |
+| **Liquidity** | Deep, sports-focused | Variable | N/A (no trading) | Thin |
+| **API** | REST + streaming | REST API | REST API | TWS/Web API |
+| **Edge opportunity** | Primary execution | Backtesting + paper trading | Reference only | Secondary execution |
+| **Agent role** | Scan + Bet | Test + Validate + Backtest | Cross-reference | Optional bet |
 
 ### 3.2 Cross-Platform Signal Aggregation
 
-The agent triangulates fair value using signals from all three platforms:
+The agent triangulates fair value using signals from all platforms:
 
-1. **Polymarket prices** - real money at stake, deep liquidity. Primary execution target.
+1. **Betfair prices** — real money at stake, deep liquidity. Primary execution target.
 2. **Metaculus community forecasts** — large forecaster base with tracked calibration. Strong Bayesian anchor, especially for science/tech/geopolitics.
 3. **Manifold play-money prices** — fast-moving, high-volume sentiment indicator. Useful for breaking events where crowds react faster than formal forecasters.
 
 When the same event appears across platforms, disagreement signals opportunity:
-- Polymarket YES = 0.40, Metaculus median = 0.55 -> potential buy on Polymarket.
-- Metaculus and Manifold agree at 0.60, Polymarket at 0.45 -> strong buy signal.
+- Betfair YES = 0.40, Metaculus median = 0.55 → potential buy on Betfair.
+- Metaculus and Manifold agree at 0.60, Betfair at 0.45 → strong buy signal.
 
 ### 3.3 Platform Abstraction (Trait-Based)
 
@@ -167,38 +163,46 @@ When the same event appears across platforms, disagreement signals opportunity:
 pub trait PredictionPlatform: Send + Sync {
     /// Fetch active markets from this platform
     async fn fetch_markets(&self) -> Result<Vec<Market>>;
-    
+
     /// Place a bet on a specific market (no-op for read-only platforms)
     async fn place_bet(&self, market_id: &str, side: Side, amount: f64) -> Result<TradeReceipt>;
-    
+
     /// Get current positions and P&L
     async fn get_positions(&self) -> Result<Vec<Position>>;
-    
+
     /// Check available balance on this platform
     async fn get_balance(&self) -> Result<f64>;
-    
+
     /// Platform-specific liquidity check
     async fn check_liquidity(&self, market_id: &str) -> Result<LiquidityInfo>;
-    
+
     /// Whether this platform supports real-money execution
     fn is_executable(&self) -> bool;
-    
+
     /// Platform name for logging
     fn name(&self) -> &str;
 }
 ```
 
-### 3.4 Polymarket Integration
+### 3.4 Betfair Exchange Integration
 
-The Polymarket integration is the most critical component for real-money execution:
+The Betfair integration is the most critical component for real-money execution:
 
-- **Connection**: Gamma REST API (market data, no auth) + CLOB REST API (trading, HMAC-SHA256 auth).
-- **Account**: Polygon wallet with USDC. Connect via MetaMask or derive API keys from private key.
-- **Market access**: 500+ active markets across politics, economics, crypto, sports, culture, weather.
-- **Order types**: Limit orders preferred (better fill prices), market orders for urgent executions.
-- **Position tracking**: Via CLOB API positions endpoint and on-chain token balances.
-- **Interest**: USDC on Polygon. Conditional tokens (ERC-1155) for YES/NO positions.
-- **Order types**: Limit (GTC, GTD) and market (FOK, FAK) orders via CLOB. Batch support up to 15 orders per request.
+- **Connection**: REST API for market data + order placement, streaming API for real-time odds.
+- **Crate**: `betfair-rs` provides typed Rust bindings for Betfair's API.
+- **Authentication**: App key + session token (username/password login or SSL certificate).
+- **Market access**: Thousands of active markets across sports, politics, current affairs.
+- **Order types**: Back (buy YES) and Lay (sell YES / buy NO) at specified odds.
+- **Position tracking**: Via listCurrentOrders and listClearedOrders endpoints.
+- **Streaming**: Real-time odds updates via Betfair's streaming API for fast reaction.
+
+### 3.5 IBKR ForecastTrader Integration (Optional)
+
+- **Connection**: TWS API or Web API.
+- **Market access**: Event contracts (YES/NO binary options on outcomes).
+- **Structure**: Treated like options with YES/NO strikes — uses existing options infrastructure.
+- **Paper port**: 4002. Live port: 4001.
+- **Status**: Optional secondary module, added after Betfair is stable.
 
 ---
 
@@ -208,11 +212,10 @@ The Polymarket integration is the most critical component for real-money executi
 
 | Category | Source | Signal Type | Refresh Rate |
 |----------|--------|-------------|-------------|
-| Weather | OpenWeatherMap, NOAA | Forecasts, alerts, actuals | 30 min |
-| Sports | API-Sports, ESPN | Injuries, lineups, odds | 15 min |
-| Economics | FRED, World Bank | CPI, rates, employment | Daily |
-| News | NewsAPI, RSS feeds | Breaking events, sentiment | 10 min |
-| Financial | Yahoo Finance, CoinGecko | Prices, yields, volatility | 5 min |
+| Weather | Open-Meteo (free) | Forecasts, alerts, actuals | 30 min |
+| Sports | API-Sports | Injuries, lineups, odds | 15 min |
+| Economics | FRED | CPI, rates, employment | Daily |
+| News | NewsAPI | Breaking events, sentiment | 10 min |
 
 ### 4.2 Data Provider Abstraction
 
@@ -221,10 +224,10 @@ The Polymarket integration is the most critical component for real-money executi
 pub trait DataProvider: Send + Sync {
     /// Category this provider covers
     fn category(&self) -> MarketCategory;
-    
+
     /// Fetch relevant data for a market question
     async fn fetch_context(&self, market: &Market) -> Result<DataContext>;
-    
+
     /// Cost per API call (for cost accounting)
     fn cost_per_call(&self) -> f64;
 }
@@ -234,49 +237,49 @@ pub trait DataProvider: Send + Sync {
 
 ```
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│  Polymarket│    │   Metaculus   │    │   Manifold   │
-│   Markets     │    │   Forecasts   │    │  Play-money  │
-└──────┬────────┘    └──────┬────────┘    └──────┬────────┘
-       │                    │                    │
-       └────────────┬───────┘                    │
-                    ▼                            │
-          ┌─────────────────┐                    │
-          │  Market Router   │◄───────────────────┘
-          │  (dedup, merge,  │    cross-reference + sentiment
-          │   match events)  │
-          └───────┬─────────┘
-                  │
-                  ▼
-          ┌─────────────────┐
-          │  Data Enricher   │◄──── Weather / Sports / Econ APIs
-          │  (per category)  │
-          └───────┬─────────┘
-                  │
-                  ▼
-          ┌─────────────────┐
-          │  LLM Estimator   │◄──── Claude / GPT-4 / Grok
-          │  (fair value)    │
-          └───────┬─────────┘
-                  │
-                  ▼
-          ┌─────────────────┐
-          │  Edge Detector   │
-          │  (threshold +    │
-          │   Kelly sizing)  │
-          └───────┬─────────┘
-                  │
-                  ▼
-          ┌─────────────────┐
-          │  Trade Executor   │──── Polymarket (real money)
-          │  (platform-aware) │──── Manifold (paper validation)
-          └───────┬─────────┘
-                  │
-                  ▼
-          ┌─────────────────┐
-          │  Accountant      │
-          │  (P&L, costs,    │
-          │   cost tracking) │
-          └─────────────────┘
+│   Betfair    │    │   Metaculus   │    │   Manifold   │
+│   Markets    │    │   Forecasts   │    │  Play-money  │
+└──────┬───────┘    └──────┬───────┘    └──────┬───────┘
+       │                   │                   │
+       └───────────┬───────┘                   │
+                   ▼                           │
+         ┌─────────────────┐                   │
+         │  Market Router   │◄─────────────────┘
+         │  (dedup, merge,  │    cross-reference + sentiment
+         │   match events)  │
+         └───────┬─────────┘
+                 │
+                 ▼
+         ┌─────────────────┐
+         │  Data Enricher   │◄──── Weather / Sports / Econ APIs
+         │  (per category)  │
+         └───────┬─────────┘
+                 │
+                 ▼
+         ┌─────────────────┐
+         │  LLM Estimator   │◄──── OpenRouter → Claude / Grok
+         │  (fair value)    │      (auto-fallback)
+         └───────┬─────────┘
+                 │
+                 ▼
+         ┌─────────────────┐
+         │  Edge Detector   │
+         │  (threshold +    │
+         │   Kelly sizing)  │
+         └───────┬─────────┘
+                 │
+                 ▼
+         ┌─────────────────┐
+         │  Trade Executor   │──── Betfair (real money)
+         │  (platform-aware) │──── Manifold (paper validation)
+         └───────┬─────────┘     IBKR (optional secondary)
+                 │
+                 ▼
+         ┌─────────────────┐
+         │  Accountant      │
+         │  (P&L, costs,    │
+         │   cost tracking) │
+         └─────────────────┘
 ```
 
 ---
@@ -287,12 +290,12 @@ pub trait DataProvider: Send + Sync {
 
 | Parameter | Default | Configurable |
 |-----------|---------|-------------|
-| Max single bet | 6% of bankroll | Yes |
-| Max exposure per market | 10% of bankroll | Yes |
-| Max exposure per category | 30% of bankroll | Yes |
-| Max total exposure | 60% of bankroll | Yes |
-| Minimum liquidity (Polymarket) | 50 contracts / 24h | Yes |
+| Max single bet | 1.5% of bankroll | Yes |
+| Max exposure per category | 25% of bankroll | Yes |
+| Max total exposure | 10-12% of bankroll | Yes |
+| Minimum liquidity | Platform-dependent | Yes |
 | Kelly multiplier | 0.25 (quarter-Kelly) | Yes |
+| Max bets per cycle | 5 | Yes |
 
 ### 5.2 Drawdown Protection
 
@@ -306,6 +309,8 @@ The agent adapts its risk profile based on bankroll trajectory:
 | 25% - 50% | Survival mode | 0.10 |
 | < 25% | Ultra-conservative | 0.05 |
 
+Auto-pause on excessive drawdown (configurable threshold, default 40% from peak).
+
 ### 5.3 Correlation Management
 
 Markets are often correlated (e.g., "Will CPI exceed 3%?" and "Will the Fed cut rates?"). The agent:
@@ -316,7 +321,7 @@ Markets are often correlated (e.g., "Will CPI exceed 3%?" and "Will the Fed cut 
 
 ### 5.4 Slippage Model
 
-For Polymarket (CLOB order book):
+For Betfair Exchange (back/lay order book):
 ```
 effective_price = market_price + slippage_estimate(amount, order_book_depth)
 ```
@@ -344,7 +349,8 @@ CREATE TABLE estimates (
     actual_outcome INTEGER,  -- 0 or 1, filled on resolution
     timestamp TEXT,
     data_context TEXT,       -- JSON blob of data used
-    llm_model TEXT
+    llm_model TEXT,          -- e.g. "anthropic/claude-sonnet-4" or "x-ai/grok-4.1-fast"
+    llm_provider TEXT        -- "openrouter"
 );
 ```
 
@@ -355,6 +361,7 @@ After sufficient history (50+ resolved markets), the agent computes:
 - **Brier score**: Mean squared error of probability estimates.
 - **Calibration curve**: Plot predicted vs. actual frequencies in probability bins.
 - **Category-specific accuracy**: Which domains yield the best edges.
+- **Model comparison**: Per-model Brier scores (Claude vs Grok) to validate primary model choice.
 - **Overconfidence detection**: If estimates cluster at extremes (0.1 or 0.9) but actuals are closer to 0.3/0.7, the agent adjusts thresholds.
 
 ### 6.3 Adaptive Thresholds
@@ -380,8 +387,8 @@ if brier > 0.25 {
 Real-time dashboard accessible at `http://localhost:8080` showing:
 
 **Header Panel:**
-- Agent status: `🟢 RUNNING` or `🔴 STOPPED`
-- Current bankroll (USD equivalent across platforms)
+- Agent status: RUNNING or STOPPED
+- Current bankroll
 - Uptime and cycle count
 
 **Performance Panel:**
@@ -391,14 +398,14 @@ Real-time dashboard accessible at `http://localhost:8080` showing:
 - Best and worst trades
 
 **Activity Panel:**
-- Balance history chart (log-scale, using plotters or Chart.js)
+- Balance history chart (using Chart.js)
 - Recent trades table (time, market, side, size, price, P&L)
 - Markets scanned per cycle
 - Current open positions
 
 **Cost Panel:**
-- Cumulative API/inference costs
-- Polymarket fees paid
+- Cumulative LLM/data API costs (per-model breakdown)
+- Betfair/IBKR commissions paid
 - Daily burn rate estimate
 - Estimated cycles remaining at current burn rate
 - Cost per profitable trade
@@ -407,11 +414,10 @@ Real-time dashboard accessible at `http://localhost:8080` showing:
 - Current exposure by category
 - Drawdown from peak
 - Kelly multiplier in effect
-- Correlation-adjusted exposure
 
 ### 7.2 Alerts
 
-- Telegram/Discord webhook on: trade execution, balance milestones, low-balance warnings, agent shutdown.
+- Telegram webhook on: trade execution, balance milestones, low-balance warnings, agent shutdown, model fallback events.
 
 ---
 
@@ -427,7 +433,7 @@ Real-time dashboard accessible at `http://localhost:8080` showing:
 | Raspberry Pi 5 | $0 (hardware owned) | Dev/testing |
 | Local (tmux/systemd) | $0 | Development |
 
-**Note**: Polymarket CLOB API is stateless REST, so ORACLE can run anywhere with internet access. No persistent connection required.
+Docker + VPS-ready from day one. No persistent connection required for Betfair REST API.
 
 ### 8.2 Docker Deployment
 
@@ -450,29 +456,36 @@ CMD ["oracle", "--config", "/etc/oracle/config.toml"]
 [agent]
 name = "ORACLE-001"
 scan_interval_secs = 600       # 10 minutes
-initial_bankroll = 100.0       # USD
+initial_bankroll = 100.0       # AUD
 survival_threshold = 0.0       # Halt at $0
-currency = "USD"
+currency = "AUD"
 
 [llm]
-provider = "anthropic"         # "anthropic" | "openai" | "grok"
-model = "claude-sonnet-4-20250514"
-api_key_env = "ANTHROPIC_API_KEY"
-max_tokens = 500
+provider = "openrouter"        # "openrouter" | "anthropic" | "openai"
+model = "anthropic/claude-sonnet-4"
+fallback_model = "x-ai/grok-4.1-fast"
+api_key_env = "OPENROUTER_API_KEY"
+max_tokens = 1024
 batch_size = 10                # Markets per LLM call
 
-[platforms.polymarket]
+[platforms.betfair]
 enabled = true
-ib_host = "127.0.0.1"
-# wallet_key_env = POLYGON_PRIVATE_KEY
-ib_client_id = 1
-account_id_env = "IB_ACCOUNT_ID"
+app_key_env = "BETFAIR_APP_KEY"
+username_env = "BETFAIR_USERNAME"
+password_env = "BETFAIR_PASSWORD"
 
 [platforms.metaculus]
 enabled = true                 # Read-only cross-reference
 
 [platforms.manifold]
-enabled = true                 # Play-money validation + sentiment signal
+enabled = true                 # Paper trading + backtesting + sentiment signal
+
+[platforms.forecastex]
+enabled = false                # IBKR optional secondary
+ib_host = "127.0.0.1"
+ib_port = 4002
+ib_client_id = 1
+account_id_env = "IB_ACCOUNT_ID"
 
 [risk]
 mispricing_threshold = 0.08
@@ -489,10 +502,9 @@ politics = 0.12
 
 [data_sources]
 openweathermap_key_env = "OWM_API_KEY"
-noaa_enabled = true            # NOAA weather data
 api_sports_key_env = "API_SPORTS_KEY"
 fred_api_key_env = "FRED_API_KEY"
-coingecko = { enabled = true } # Free tier
+coingecko = { enabled = true }
 
 [dashboard]
 enabled = true
@@ -511,18 +523,18 @@ telegram_chat_id_env = "TG_CHAT_ID"
 
 ORACLE integrates with the following platforms:
 
-- **Polymarket**: Prediction market on Polygon blockchain. Largest by liquidity and market breadth (500+ active markets). Trades settle in USDC via on-chain conditional tokens.
-- **ForecastEx (IB)**: Regulated, thin markets. Available as optional fallback (Phase 2A).
+- **Betfair Exchange**: World's largest betting exchange. Deep liquidity across sports, politics, current affairs. Back/lay market structure.
+- **Manifold Markets**: Play-money only (Mana currency). Used for backtesting, paper trading, and sentiment signals.
 - **Metaculus**: No monetary bets; used as a forecasting data source and cross-reference only.
-- **Manifold**: Play-money only (Mana currency). Used for validation and sentiment signals.
+- **IBKR ForecastTrader**: Regulated event contracts. Optional secondary execution venue.
 
-**Summary**: Polymarket is ORACLE's primary execution venue, offering the deepest liquidity and broadest market coverage. Metaculus and Manifold provide informational signals via crowd forecasts and sentiment data.
+**Summary**: Betfair Exchange is ORACLE's primary execution venue, offering the deepest liquidity and broadest market coverage for its target categories. Manifold provides zero-cost testing and backtesting. Metaculus provides crowd forecast signals.
 
 ### 9.2 General
 
-- **LLM costs**: The agent tracks its own inference costs. If it cannot generate positive returns, it halts — a natural feedback mechanism for strategy viability.
+- **LLM costs**: The agent tracks its own inference costs via OpenRouter. If it cannot generate positive returns, it halts — a natural feedback mechanism for strategy viability.
 - **Data sources**: All data sources are public APIs. The agent does not use non-public information.
-- **Tax implications**: Users should consult a qualified tax professional regarding the tax treatment of prediction market activity in their jurisdiction.
+- **Tax implications**: Users should consult a qualified tax professional regarding the tax treatment of prediction market and betting exchange activity in their jurisdiction.
 - **Regulatory compliance**: Users are responsible for ensuring compliance with applicable laws and regulations in their jurisdiction before operating the agent.
 
 ---
@@ -537,15 +549,13 @@ Based on simulation parameters:
 | Conservative ($100 start) | $100 | $200-$800 | 65-70% | ~$25 |
 | Minimal ($10 start) | $10 | Halt or $50 | 60-65% | ~$15 |
 
-**Key insight**: The agent needs to find ~2-3 high-edge bets per day to cover costs. Polymarket has 500+ active markets with deep liquidity, providing ample opportunity for edge detection. Metaculus cross-references further improve estimate quality.
+**Key insight**: The agent needs to find ~2-3 high-edge bets per day to cover costs. Betfair Exchange has thousands of active markets across sports, politics, and current affairs, providing ample opportunity for edge detection. Manifold's historical data (since 2021) enables thorough backtesting before live deployment. Metaculus cross-references further improve estimate quality.
 
-**Market breadth advantage**: Polymarket's 500+ active markets across diverse categories provide a much larger opportunity set than any regulated alternative. Combined with cross-platform signal aggregation (Metaculus, Manifold), this gives ORACLE strong coverage for systematic edge detection.
-
-**Polymarket market categories available:**
-- Economics: CPI, central bank rates, GDP, unemployment, inflation
-- Weather: Hurricane strength, temperature records, tornado counts
-- Culture: Billboard 100, Oscars, Grammys, Emmy awards
-- Sports: NFL, NBA, soccer, tennis, MMA, cricket, and more
+**Betfair market categories available:**
+- Sports: Football, horse racing, tennis, cricket, basketball, and dozens more
+- Politics: Elections, referendums, leadership contests
+- Current Affairs: Economic events, weather, entertainment awards
+- Specials: Financial markets, TV shows, awards ceremonies
 
 ---
 
@@ -554,12 +564,12 @@ Based on simulation parameters:
 - **Edge**: The difference between estimated fair value and market price.
 - **Kelly criterion**: Optimal bet sizing formula that maximizes geometric growth rate.
 - **Brier score**: Mean squared error of probabilistic predictions (lower = better; 0 = perfect, 0.25 = chance).
-- **Polymarket**: Prediction market on Polygon, offering binary outcome markets that pay $1 USDC if correct.
+- **OpenRouter**: Unified LLM API that routes to multiple providers (Anthropic, xAI, OpenAI, etc.) with a single API key.
+- **Back/Lay**: Betfair's market structure — "Back" = buy (bet for), "Lay" = sell (bet against).
 - **Mana**: Manifold Markets' play-money currency.
-- **CLOB**: Central Limit Order Book (Polymarket's trading engine).
-- **USDC**: USD-pegged stablecoin used for Polymarket settlement on Polygon.
+- **betfair-rs**: Rust crate providing typed bindings for Betfair's REST and streaming APIs.
 
 ---
 
-*ORACLE v1.2 — Last updated: February 2026*
+*ORACLE v2.0 — Last updated: February 2026*
 *"The market can stay irrational longer than you can stay solvent — unless you're a bot."*

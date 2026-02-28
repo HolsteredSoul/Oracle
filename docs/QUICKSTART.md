@@ -20,7 +20,7 @@ From zero to autonomous prediction market agent — step by step.
 
 ### What You'll Need
 
-- **Windows 10 or 11** (no WSL or Linux required)
+- **Windows 10/11, macOS, or Linux**
 - **RAM**: 512 MB minimum
 - **Disk**: 500 MB free space (for Rust toolchain + build files)
 - **Internet connection**
@@ -30,12 +30,11 @@ From zero to autonomous prediction market agent — step by step.
 Rust is the programming language ORACLE is built in. You need it to compile and run the project.
 
 1. Go to [rustup.rs](https://rustup.rs)
-2. Click **"Download rustup-init.exe (64-bit)"**
-3. Run the downloaded `.exe` and follow the prompts — the defaults are fine
-4. Once installed, **close and reopen** your terminal (PowerShell or Command Prompt) so the changes take effect
-5. Verify it worked by running:
+2. Download and run the installer for your platform — the defaults are fine
+3. Once installed, **close and reopen** your terminal so the changes take effect
+4. Verify it worked by running:
 
-```powershell
+```bash
 rustc --version
 ```
 
@@ -45,11 +44,11 @@ You should see something like `rustc 1.77.0 (...)`. If you do, Rust is ready.
 
 Git lets you download the ORACLE source code.
 
-1. Go to [git-scm.com/download/win](https://git-scm.com/download/win)
-2. Download and run the installer — the defaults are fine
+1. Go to [git-scm.com/downloads](https://git-scm.com/downloads)
+2. Download and run the installer for your platform — the defaults are fine
 3. Verify it worked:
 
-```powershell
+```bash
 git --version
 ```
 
@@ -59,21 +58,22 @@ API keys are like passwords that give ORACLE access to external services. Here's
 
 | Key | Required? | What It's For | Where to Get It |
 |-----|-----------|---------------|-----------------|
-| **Anthropic API key** | ✅ Required | The AI brain — estimates market probabilities | [console.anthropic.com](https://console.anthropic.com/) |
+| **OpenRouter API key** | Required | The AI brain — routes to Claude, Grok, and other LLMs | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| **Betfair API app key** | For live trading | Real-money execution on Betfair Exchange | [developer.betfair.com](https://developer.betfair.com/) |
 | **FRED API key** | Recommended | Economic data (US macro indicators) | [fred.stlouisfed.org/docs/api](https://fred.stlouisfed.org/docs/api/api_key.html) — free |
 | **NewsAPI key** | Recommended | News headlines & sentiment | [newsapi.org/register](https://newsapi.org/register) — free (100 req/day) |
-| OpenAI API key | Optional | Alternative to Anthropic | [platform.openai.com](https://platform.openai.com/api-keys) |
+| Manifold API key | Optional | Paper-trading writes on Manifold | [manifold.markets](https://manifold.markets/) — in settings |
 | API-Sports key | Optional | Live sports scores | [api-sports.io](https://api-sports.io/) — free (100 req/day) |
 
-> **Minimum to get started:** You only need the **Anthropic API key**. The others improve ORACLE's accuracy but aren't required for a first run.
+> **Minimum to get started:** You only need the **OpenRouter API key**. The others improve ORACLE's accuracy or enable live trading but aren't required for a first run.
 
 ---
 
 ## 2. Installation
 
-Open **PowerShell** (search for it in the Start menu) and run these commands one at a time:
+Open a terminal and run these commands one at a time:
 
-```powershell
+```bash
 # Download the ORACLE source code
 git clone https://github.com/HolsteredSoul/Oracle.git
 
@@ -84,12 +84,12 @@ cd Oracle
 cargo build --release
 ```
 
-When the build finishes, the compiled program is saved at `target\release\oracle.exe`.
+When the build finishes, the compiled program is saved at `target/release/oracle`.
 
 Verify it compiled correctly:
 
-```powershell
-.\target\release\oracle.exe --help
+```bash
+./target/release/oracle --help
 ```
 
 You should see a list of available options. If you do, the build succeeded.
@@ -102,25 +102,30 @@ Before running ORACLE, you need to tell it your API keys. These are stored in a 
 
 ### Step 3.1 — Create Your .env File
 
-In PowerShell, from inside the `Oracle` folder:
+From inside the `Oracle` folder:
 
-```powershell
+```bash
 # Create your .env file from the template
-Copy-Item .env.example .env
+cp .env.example .env
 ```
 
-Now open `.env` in any text editor (Notepad is fine — right-click the file and choose "Open with" → Notepad) and fill in your keys:
+Now open `.env` in any text editor and fill in your keys:
 
 ```
 # --- Required ---
-ANTHROPIC_API_KEY=sk-ant-your-key-here
+OPENROUTER_API_KEY=sk-or-your-key-here
+
+# --- For live trading (Betfair) ---
+BETFAIR_APP_KEY=your-betfair-app-key
+BETFAIR_USERNAME=your-betfair-username
+BETFAIR_PASSWORD=your-betfair-password
 
 # --- Recommended (improves accuracy) ---
 FRED_API_KEY=your-fred-key-here
 NEWS_API_KEY=your-newsapi-key-here
 
 # --- Optional ---
-OPENAI_API_KEY=sk-your-openai-key
+MANIFOLD_API_KEY=your-manifold-key
 API_SPORTS_KEY=your-sports-key
 ```
 
@@ -136,8 +141,9 @@ The default `config.toml` ships with sensible defaults for trial mode. Key setti
 |---------|---------|---------|
 | `agent.scan_interval_secs` | `600` | Scan every 10 minutes |
 | `agent.initial_bankroll` | `100.0` | Starting simulated bankroll |
-| `llm.provider` | `"anthropic"` | LLM provider (`"anthropic"` or `"openai"`) |
-| `llm.model` | `"claude-sonnet-4-20250514"` | Model to use for estimates |
+| `llm.provider` | `"openrouter"` | LLM provider (`"openrouter"` or `"anthropic"`) |
+| `llm.model` | `"anthropic/claude-sonnet-4"` | Primary model for estimates |
+| `llm.fallback_model` | `"x-ai/grok-4.1-fast"` | Fallback when primary fails |
 | `risk.kelly_multiplier` | `0.25` | Quarter-Kelly (conservative) |
 | `risk.max_bet_pct` | `0.06` | Max 6% of bankroll per bet |
 | `dashboard.port` | `8080` | Web dashboard port |
@@ -154,20 +160,21 @@ This is the best way to start. ORACLE will scan real markets, make real probabil
 
 By default, ORACLE runs in **dry-run mode**:
 
-- It scans live markets on Polymarket, Metaculus, and Manifold
+- It scans live markets on Manifold and Metaculus (and Betfair if configured)
 - It pulls in real-world data (news, weather, sports scores, economic indicators)
-- It sends market details to Claude (or GPT-4) to estimate the true probability
+- It sends market details to Claude 4 Sonnet (via OpenRouter) to estimate the true probability
+- If the primary model fails, it automatically falls back to Grok-4.1-fast
 - It detects mispricings and calculates bet sizes using the Kelly criterion
-- **But it logs the trades instead of executing them** — no wallet, no real money needed
+- **But it logs the trades instead of executing them** — no real money needed
 
 You can also optionally enable **Manifold paper trading**, which places bets using play-money (called "Mana") on Manifold Markets — real execution, zero financial risk.
 
 ### 4.2 Start a Dry Run
 
-Make sure your `.env` file has at least `ANTHROPIC_API_KEY` set, then in PowerShell:
+Make sure your `.env` file has at least `OPENROUTER_API_KEY` set, then:
 
-```powershell
-.\target\release\oracle.exe --config config.toml
+```bash
+./target/release/oracle --config config.toml
 ```
 
 You'll see the startup banner:
@@ -187,11 +194,12 @@ Followed by structured logs showing each cycle:
 
 ```
 INFO oracle: ORACLE starting up agent_name=ORACLE-001 scan_interval_secs=600
+INFO oracle: Using OpenRouter LLM provider model=anthropic/claude-sonnet-4 fallback=Some("x-ai/grok-4.1-fast")
 INFO oracle: Fresh start bankroll=100.0
 INFO oracle: Entering main loop. Press Ctrl+C to stop.
 INFO oracle: Starting cycle cycle=1
 INFO oracle: Markets scanned count=47
-INFO oracle: [DRY RUN] Would place bet market_id=0xabc side=Yes amount=$4.20 edge=12.3%
+INFO oracle: [DRY RUN] Would place bet market_id=abc side=Yes amount=$4.20 edge=12.3%
 INFO oracle: Cycle complete cycle=1 scanned=47 edges=3 bets=2 bankroll=$98.50
 ```
 
@@ -225,6 +233,10 @@ kelly_multiplier = 0.15        # Reduce bet sizing
 # Faster/slower scanning
 [agent]
 scan_interval_secs = 300       # Every 5 minutes (more API cost)
+
+# Use a cheaper primary model
+[llm]
+model = "x-ai/grok-4.1-fast"  # Cheaper but less accurate
 ```
 
 ### 4.6 Running with Docker (Simulated)
@@ -254,90 +266,46 @@ docker stop oracle-trial
 
 ## 5. Full Operation — Real Funds
 
-Once you're satisfied with trial performance, this section covers switching to real-money execution on Polymarket.
+Once you're satisfied with trial performance, this section covers switching to real-money execution on Betfair Exchange.
 
 ### 5.1 Overview
 
-ORACLE executes real-money trades on **Polymarket**, which operates on the **Polygon** blockchain using **USDC** (a USD-pegged stablecoin). The flow is:
+ORACLE executes real-money trades on **Betfair Exchange**, one of the world's largest betting exchanges. The flow is:
 
 ```
 Your bank account
-      ↓  (fiat on-ramp)
-Crypto exchange (e.g. Coinbase, Kraken, Binance)
-      ↓  (withdraw USDC to Polygon)
-Polygon wallet (MetaMask or similar)
-      ↓  (deposit to Polymarket)
-Polymarket account
-      ↓  (ORACLE places trades via API)
-Profit / loss settled in USDC
+      |  (deposit)
+Betfair account (funded)
+      |  (ORACLE places trades via REST API)
+Profit / loss settled in your Betfair balance
+      |  (withdraw)
+Your bank account
 ```
 
-### 5.2 Step 1 — Create a Polygon Wallet
+### 5.2 Step 1 — Create a Betfair Account
 
-You need a wallet that can hold USDC on the Polygon network.
+1. Go to [betfair.com](https://www.betfair.com) and create an account
+2. Complete identity verification as required
+3. Deposit funds via bank transfer, card, or other payment methods
 
-**Option A: MetaMask (recommended for beginners)**
+### 5.3 Step 2 — Get Betfair API Credentials
 
-1. Install [MetaMask](https://metamask.io/) browser extension
-2. Create a new wallet — **save your seed phrase securely offline**
-3. Add the Polygon network:
-   - Network name: `Polygon Mainnet`
-   - RPC URL: `https://polygon-rpc.com`
-   - Chain ID: `137`
-   - Currency: `MATIC`
-   - Explorer: `https://polygonscan.com`
-4. Copy your wallet address (starts with `0x...`)
+1. Go to [developer.betfair.com](https://developer.betfair.com/)
+2. Register for a **Betfair API app key** (free for personal use)
+3. You'll need:
+   - **App key** — identifies your application
+   - **Username & password** — your Betfair login credentials
+   - Optional: SSL certificate for non-interactive login
 
-**Option B: Dedicated wallet (recommended for production)**
+### 5.4 Step 3 — Configure ORACLE for Live Trading
 
-For unattended operation, generate a dedicated wallet for ORACLE:
-
-```bash
-# Using cast (from the foundry toolkit: https://getfoundry.sh)
-cast wallet new
-```
-
-This outputs a private key and address. Store the private key securely — you'll need it for the `POLYGON_PRIVATE_KEY` env var.
-
-> **Security**: Use a dedicated wallet for ORACLE with only the funds you're willing to risk. Never use your main wallet.
-
-### 5.3 Step 2 — Fund the Wallet with USDC
-
-You need USDC on the Polygon network in your wallet.
-
-**Method A: Via a centralised exchange**
-
-1. Buy USDC on a crypto exchange (Coinbase, Kraken, Binance, etc.)
-2. Withdraw USDC to your Polygon wallet address
-   - Select **Polygon** as the withdrawal network (not Ethereum — fees are much lower on Polygon)
-   - Double-check the destination address
-3. You also need a small amount of **POL** (previously MATIC) for gas fees (~$0.50 worth is plenty — Polygon transactions cost fractions of a cent)
-
-**Method B: Bridge from Ethereum**
-
-If you already have USDC on Ethereum:
-
-1. Go to [portal.polygon.technology/bridge](https://portal.polygon.technology/bridge)
-2. Bridge USDC from Ethereum to Polygon
-3. Wait for confirmation (~15-30 minutes)
-
-**Recommended starting amount**: $50-$200 USDC. The agent needs enough bankroll to cover operational costs (LLM inference ~$15-50/day) while building up returns.
-
-### 5.4 Step 3 — Connect Wallet to Polymarket
-
-1. Go to [polymarket.com](https://polymarket.com)
-2. Click **Sign Up / Log In**
-3. Connect your wallet (MetaMask or WalletConnect)
-4. Deposit USDC from your wallet into your Polymarket account
-5. Navigate to **Settings → API Keys** and generate API credentials (if required for CLOB access)
-
-### 5.5 Step 4 — Configure ORACLE for Live Trading
-
-Add your wallet's private key to `.env`:
+Add your Betfair credentials to `.env`:
 
 ```bash
-# .env — add this line
-POLYGON_PRIVATE_KEY=0xyour_private_key_here
+# .env — add these lines
+BETFAIR_APP_KEY=your-app-key-here
+BETFAIR_USERNAME=your-betfair-username
+BETFAIR_PASSWORD=your-betfair-password
 ```
 
 > **Never commit `.env` to version control.** It's already in `.gitignore`.
@@ -346,28 +314,28 @@ Update `config.toml` to reflect your real starting bankroll:
 
 ```toml
 [agent]
-initial_bankroll = 100.0    # Match your actual USDC deposit
-currency = "USD"
+initial_bankroll = 100.0    # Match your actual Betfair deposit
+currency = "GBP"            # Or AUD, EUR — match your Betfair account currency
 ```
 
-### 5.6 Step 5 — Launch with Real Funds
+### 5.5 Step 4 — Launch with Real Funds
 
-```powershell
-.\target\release\oracle.exe --config config.toml
+```bash
+./target/release/oracle --config config.toml
 ```
 
 The agent will now:
 
-1. Scan Polymarket, Metaculus, and Manifold for live markets
+1. Scan Betfair, Manifold, and Metaculus for live markets
 2. Enrich candidates with weather, sports, economics, and news data
-3. Send enriched markets to the LLM for probability estimation
+3. Send enriched markets to Claude 4 Sonnet (via OpenRouter) for probability estimation
 4. Detect mispricings where the LLM estimate diverges from market price
 5. Size bets using Kelly criterion (capped at 6% of bankroll)
-6. Execute trades on Polymarket via the CLOB API
+6. Execute trades on Betfair via the REST API
 7. Track costs, P&L, and update the dashboard
 8. Repeat every 10 minutes
 
-### 5.7 Risk Controls (Built-in)
+### 5.6 Risk Controls (Built-in)
 
 ORACLE enforces multiple safety layers automatically:
 
@@ -390,13 +358,24 @@ ORACLE enforces multiple safety layers automatically:
 | 25-50% | Survival mode | 0.10 |
 | < 25% | Ultra-conservative | 0.05 |
 
+### 5.7 Adding IBKR Event Contracts (Optional)
+
+For additional market coverage, you can optionally enable IBKR ForecastTrader event contracts:
+
+1. Open an Interactive Brokers account with event contract permissions
+2. Configure TWS/IB Gateway (paper port 4002, live port 4001)
+3. Add credentials to `config.toml` under `[platforms.forecastex]`
+
+Event contracts on IBKR are treated like options with YES/NO strikes.
+
 ### 5.8 Withdrawing Funds
 
-To withdraw profits:
+To withdraw profits from Betfair:
 
-1. Withdraw USDC from Polymarket back to your Polygon wallet (via Polymarket UI)
-2. Send USDC from your Polygon wallet to your exchange
-3. Sell USDC for fiat and withdraw to your bank
+1. Log in to your Betfair account
+2. Navigate to **My Account > Withdraw**
+3. Select your withdrawal method and amount
+4. Funds typically arrive in 1-3 business days
 
 ---
 
@@ -419,20 +398,20 @@ It auto-refreshes every 30 seconds.
 
 Structured logs are written to stdout. For production, pipe to a file:
 
-```powershell
-.\target\release\oracle.exe --config config.toml 2>&1 | Tee-Object -FilePath oracle.log -Append
+```bash
+./target/release/oracle --config config.toml 2>&1 | tee -a oracle.log
 ```
 
 Enable JSON logging:
 
-```powershell
-$env:ORACLE_LOG_JSON="1"; .\target\release\oracle.exe --config config.toml
+```bash
+ORACLE_LOG_JSON=1 ./target/release/oracle --config config.toml
 ```
 
 Adjust log verbosity:
 
-```powershell
-$env:RUST_LOG="oracle=debug"; .\target\release\oracle.exe --config config.toml
+```bash
+RUST_LOG=oracle=debug ./target/release/oracle --config config.toml
 ```
 
 ### 6.3 State Persistence
@@ -445,7 +424,15 @@ Agent state is saved to `oracle_state.json` after every cycle. If the agent cras
 
 ### "No LLM API key configured — running in dry-run/scan-only mode"
 
-Your `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) is not set or empty. Check `.env` and ensure the key is valid.
+Your `OPENROUTER_API_KEY` is not set or empty. Check `.env` and ensure the key is valid.
+
+### "Primary model failed, falling back"
+
+The primary model (Claude 4 Sonnet) is temporarily unavailable. The agent automatically falls back to Grok-4.1-fast. This is normal — check OpenRouter status if it persists.
+
+### "Both primary and fallback models failed"
+
+Both LLM models are unavailable. Check your OpenRouter API key and account balance at [openrouter.ai/activity](https://openrouter.ai/activity).
 
 ### No markets scanned
 
@@ -466,7 +453,8 @@ mispricing_threshold = 0.06    # Lower = more sensitive (but noisier)
 
 - Reduce `llm.batch_size` in `config.toml` (fewer markets per LLM call)
 - Increase `agent.scan_interval_secs` (scan less frequently)
-- Use a cheaper model (e.g. `"claude-haiku-4-5-20251001"`)
+- Switch to a cheaper primary model: `model = "x-ai/grok-4.1-fast"`
+- Use a cheaper Claude variant: `model = "anthropic/claude-haiku-4"`
 
 ### Agent died (bankroll reached $0)
 

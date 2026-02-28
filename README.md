@@ -1,4 +1,4 @@
-﻿# ORACLE — Autonomous Prediction Market AI Agent
+# ORACLE — Autonomous Prediction Market AI Agent
 
 **O**ptimized **R**isk-**A**djusted **C**ross-platform **L**everaged **E**ngine
 
@@ -10,37 +10,48 @@ reasoning, and place Kelly-criterion-sized bets.
 
 | Platform | Role | Type |
 |----------|------|------|
-| **Polymarket** | Real-money execution | On-chain CLOB, USDC on Polygon |
+| **Betfair Exchange** | Real-money execution (primary) | Back/lay betting exchange |
+| **Manifold** | Paper-trading, backtesting, validation + sentiment | Play-money |
 | **Metaculus** | Crowd forecast cross-reference | Read-only |
-| **Manifold** | Paper-trading validation + sentiment | Play-money |
+| **IBKR ForecastTrader** | Real-money execution (optional secondary) | Event contracts |
 
-Polymarket is the primary execution venue, offering deep liquidity across 500+ markets. Metaculus and Manifold provide cross-reference signals for crowd forecasts and play-money sentiment.
-Australia as of February 2026.
+Betfair Exchange is the primary live execution venue, offering deep liquidity across sports, politics, and current affairs markets. Manifold provides zero-cost paper trading and historical data for backtesting. Metaculus supplies crowd forecast cross-references. IBKR event contracts are an optional secondary module.
+
+## LLM Stack
+
+All LLM calls route through **OpenRouter** with a single API key:
+
+| Model | Role | Provider |
+|-------|------|----------|
+| `anthropic/claude-sonnet-4` | Primary estimator | OpenRouter |
+| `x-ai/grok-4.1-fast` | Cheap/fast fallback | OpenRouter |
+
+Automatic failover: if the primary model fails after retries, the agent transparently falls back to the secondary model.
 
 ## Prerequisites
 
 - **Rust** (stable toolchain, 2021 edition) — install via [rustup](https://rustup.rs)
-- **Polygon wallet** with USDC funded (for Polymarket execution)
-- API keys for LLM provider(s) and data sources (see `.env.example`)
+- **OpenRouter API key** — single key for all LLM models ([openrouter.ai](https://openrouter.ai))
+- **Betfair API app key** + funded account (for live execution)
+- Optional: Manifold API key (for paper-trading writes), data source API keys
 
 ## Quick Start
 
-```powershell
+```bash
 # 1. Clone and configure
-cd oracle
-Copy-Item .env.example .env
+git clone https://github.com/HolsteredSoul/Oracle.git
+cd Oracle
+cp .env.example .env
 # Fill in your API keys in .env
 
-# 2. Fund a Polygon wallet with USDC for Polymarket
-
-# 3. Build
+# 2. Build
 cargo build --release
 
-# 4. Run (paper trading)
+# 3. Run (dry-run / paper trading mode)
 cargo run -- --config config.toml
 
-# 5. Run release build
-.\target\release\oracle.exe --config config.toml
+# 4. Run release build
+./target/release/oracle --config config.toml
 ```
 
 ## Docker
@@ -59,17 +70,19 @@ oracle/
 ├── .env.example            # Environment variable template
 ├── Dockerfile              # Container deployment
 ├── docs/
-│   ├── WHITEPAPER.md       # Theory, architecture, risk framework (v1.2)
-│   └── DEVELOPMENT_PLAN.md # Phased build roadmap (v1.2)
+│   ├── WHITEPAPER.md       # Theory, architecture, risk framework
+│   ├── DEVELOPMENT_PLAN.md # Phased build roadmap
+│   └── QUICKSTART.md       # Step-by-step setup guide
 ├── src/
 │   ├── main.rs             # Entry point, async main loop
 │   ├── config.rs           # TOML config + env var resolution
 │   ├── types.rs            # Shared types (Market, Side, Trade, etc.)
 │   ├── platforms/          # Platform integrations
 │   │   ├── mod.rs          # PredictionPlatform trait
-│   │   ├── polymarket.rs   # Polymarket (Gamma + CLOB API)
+│   │   ├── manifold.rs     # Manifold (play-money + paper trading)
 │   │   ├── metaculus.rs    # Metaculus (read-only)
-│   │   └── manifold.rs     # Manifold (play-money)
+│   │   ├── forecastex.rs   # IBKR ForecastTrader (optional, Phase 2)
+│   │   └── polymarket.rs   # Polymarket (stub for future)
 │   ├── data/               # Data enrichment providers
 │   │   ├── mod.rs          # DataProvider trait
 │   │   ├── weather.rs      # Open-Meteo (free, global)
@@ -77,10 +90,11 @@ oracle/
 │   │   ├── economics.rs    # FRED (US macro indicators)
 │   │   └── news.rs         # NewsAPI + sentiment scoring
 │   ├── llm/                # LLM integration
-│   │   ├── mod.rs          # LlmEstimator trait + prompt builder
-│   │   ├── anthropic.rs    # Claude
-│   │   ├── openai.rs       # GPT-4
-│   │   └── grok.rs         # Grok
+│   │   ├── mod.rs          # LlmEstimator trait
+│   │   ├── openrouter.rs   # OpenRouter (primary — routes to all models)
+│   │   ├── anthropic.rs    # Anthropic direct (fallback provider)
+│   │   ├── openai.rs       # OpenAI direct (fallback provider)
+│   │   └── grok.rs         # Grok (stub)
 │   ├── strategy/           # Strategy engine
 │   │   ├── mod.rs          # Strategy orchestrator
 │   │   ├── edge.rs         # Mispricing detection
@@ -93,12 +107,14 @@ oracle/
 │   │   ├── executor.rs     # Trade execution
 │   │   └── accountant.rs   # Cost tracking + survival
 │   ├── storage/            # Persistence
-│   │   ├── mod.rs          # SQLite operations
-│   │   └── schema.sql      # Database schema
-│   └── dashboard/          # Monitoring
-│       ├── mod.rs          # Axum web server
-│       ├── routes.rs       # API endpoints
-│       └── templates/      # HTML templates
+│   │   └── mod.rs          # JSON state persistence
+│   ├── dashboard/          # Monitoring
+│   │   ├── mod.rs          # Axum web server
+│   │   └── routes.rs       # API endpoints
+│   └── backtest/           # Backtesting framework
+│       ├── mod.rs
+│       ├── runner.rs        # Strategy replay engine
+│       └── calibration.rs   # Brier score + calibration curves
 └── tests/
     ├── integration/
     │   ├── mock_platform.rs
@@ -112,25 +128,27 @@ oracle/
 
 | Phase | Description | Status | Tests |
 |-------|-------------|--------|-------|
-| 0 | Project Scaffolding | ✅ Complete | — |
-| 1 | Core Types & Platform Trait | ✅ Complete | 59 |
-| 2A | Polymarket CLOB Executor | ? In Progress | 15 |
-| 2B | Metaculus Scanner | ✅ Complete | 24 |
-| 2C | Manifold Scanner | ✅ Complete | 17 |
-| 2D | Market Router | ✅ Complete | 20 |
-| 3 | Data Enrichment Pipeline | ✅ Complete | 40 |
-| 4 | LLM Integration | ✅ Complete | 21 |
-| 5 | Strategy Engine | ✅ Complete | 32 |
-| 6 | Execution & Survival Loop | ✅ Complete | 16 |
-| 7 | Dashboard & Monitoring | ✅ Complete | 18 |
-| 8 | Calibration & Backtesting | ✅ Complete | 19 |
+| 0 | Project Scaffolding | Complete | — |
+| 1 | Core Types & Platform Trait | Complete | 59 |
+| 2B | Metaculus Scanner | Complete | 24 |
+| 2C | Manifold Scanner | Complete | 17 |
+| 2D | Market Router | Complete | 20 |
+| 3 | Data Enrichment Pipeline | Complete | 40 |
+| 4 | LLM Integration (OpenRouter + Anthropic + OpenAI) | Complete | 30 |
+| 5 | Strategy Engine | Complete | 32 |
+| 6 | Execution & Survival Loop | Complete | 16 |
+| 7 | Dashboard & Monitoring | Complete | 18 |
+| 8 | Calibration & Backtesting | Complete | 19 |
+| — | Betfair Exchange adapter | Planned | — |
+| — | IBKR ForecastTrader adapter | Planned | — |
 
-**Total tests passing: 281**
+**Total tests passing: 298**
 
 ## Documentation
 
-- [Whitepaper v1.2](docs/WHITEPAPER.md) — Theory, architecture, risk framework
-- [Development Plan v1.2](docs/DEVELOPMENT_PLAN.md) — Phased build roadmap
+- [Whitepaper](docs/WHITEPAPER.md) — Theory, architecture, risk framework
+- [Development Plan](docs/DEVELOPMENT_PLAN.md) — Phased build roadmap
+- [Quick Start Guide](docs/QUICKSTART.md) — Step-by-step setup instructions
 
 ## Configuration
 
@@ -139,12 +157,12 @@ environment variables referenced in the config. See `.env.example` for the full 
 
 Key config sections:
 - `[agent]` — scan interval, bankroll, currency
-- `[llm]` — provider, model, token limits
-- `[platforms.*]` - Polymarket, Metaculus, Manifold
+- `[llm]` — provider (`"openrouter"` | `"anthropic"`), model, fallback model, token limits
+- `[platforms.*]` — Manifold, Metaculus, Betfair (planned), IBKR (planned)
 - `[risk]` — thresholds, Kelly multiplier, exposure limits
 - `[data_sources]` — weather, sports, economics API keys
 - `[dashboard]` — web UI port
-- `[alerts]` — Telegram/Discord notifications
+- `[alerts]` — Telegram notifications
 
 ## License
 
