@@ -81,6 +81,7 @@ oracle/
 │   │   ├── mod.rs          # PredictionPlatform trait
 │   │   ├── manifold.rs     # Manifold (play-money + paper trading)
 │   │   ├── metaculus.rs    # Metaculus (read-only)
+│   │   ├── betfair.rs      # Betfair Exchange (real-money execution)
 │   │   ├── forecastex.rs   # IBKR ForecastTrader (optional, Phase 2)
 │   │   └── polymarket.rs   # Polymarket (stub for future)
 │   ├── data/               # Data enrichment providers
@@ -139,10 +140,10 @@ oracle/
 | 6 | Execution & Survival Loop | Complete | 16 |
 | 7 | Dashboard & Monitoring | Complete | 18 |
 | 8 | Calibration & Backtesting | Complete | 19 |
-| — | Betfair Exchange adapter | Planned | — |
+| 9 | Betfair Exchange adapter | Complete | 15 |
 | — | IBKR ForecastTrader adapter | Planned | — |
 
-**Total tests passing: 298**
+**Total tests passing: 313**
 
 ## Documentation
 
@@ -158,7 +159,7 @@ environment variables referenced in the config. See `.env.example` for the full 
 Key config sections:
 - `[agent]` — scan interval, bankroll, currency
 - `[llm]` — provider (`"openrouter"` | `"anthropic"`), model, fallback model, token limits
-- `[platforms.*]` — Manifold, Metaculus, Betfair (planned), IBKR (planned)
+- `[platforms.*]` — Manifold, Metaculus, Betfair, IBKR (planned)
 - `[risk]` — thresholds, Kelly multiplier, exposure limits
 - `[data_sources]` — weather, sports, economics API keys
 - `[dashboard]` — web UI port
