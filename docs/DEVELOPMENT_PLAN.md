@@ -12,7 +12,7 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 **Language**: Rust (stable toolchain, 2021 edition)
 **Async runtime**: Tokio
-**Key crates**: reqwest, serde, axum, sqlx, chrono, tracing, betfair-rs (planned)
+**Key crates**: reqwest, serde, axum, sqlx, chrono, tracing
 
 **Target platforms**:
 - **Betfair Exchange** — real-money execution (primary live target). Deep liquidity across sports, politics, and current affairs.
@@ -27,8 +27,7 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 **Core tech stack (minimal & focused)**:
 - Rust + Tokio + sqlx (SQLite)
-- betfair-rs (for Betfair REST + streaming, planned)
-- OpenRouter client + reqwest (Manifold & enrichment)
+- reqwest (Betfair REST API, Manifold & enrichment)
 - rust_decimal, tracing, serde, chrono
 - Optional: tungstenite for extra streaming if needed
 
@@ -62,7 +61,7 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 ### Phase 2: Platform Integrations (Scanning) — PARTIAL
 
-**Status**: Metaculus (2B), Manifold (2C), and Market Router (2D) complete. Betfair and IBKR adapters planned for Phase 3 (new roadmap).
+**Status**: Metaculus (2B), Manifold (2C), Market Router (2D), and Betfair (2E) complete. IBKR adapter planned.
 
 #### 2B: Metaculus Scanner — COMPLETE (2026-02-14)
 - [x] REST API client (`https://www.metaculus.com/api2/`)
@@ -80,6 +79,17 @@ This document defines the phased development plan for ORACLE. Each phase produce
 - [x] Word-overlap fuzzy matching (Jaccard + containment)
 - [x] Priority scoring (cross-refs, liquidity, centrality)
 - [x] 20 unit tests
+
+#### 2E: Betfair Exchange Adapter — COMPLETE (2026-02-28)
+- [x] Full `PredictionPlatform` trait impl (fetch_markets, place_bet, get_positions, get_balance, check_liquidity)
+- [x] SSO authentication with session token management and auto-renewal on 401
+- [x] Market catalogue fetching across 14 event types (sports, politics, financials)
+- [x] Live market book prices with back/lay decimal odds → implied probability conversion
+- [x] Order placement (BACK/LAY limit orders) with commission tracking (5% default rate)
+- [x] Position tracking via `listCurrentOrders` and balance via `getAccountFunds`
+- [x] Wired into MarketRouter (concurrent scanning) and Executor (real-money routing)
+- [x] `BetfairConfig` with env var references, disabled by default in `config.toml`
+- [x] 15 unit tests (classification, price extraction, favourite selection, market conversion)
 
 ### Phase 3: Data Enrichment Pipeline — COMPLETE
 
@@ -163,10 +173,10 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 - [x] OpenRouter key + integration with Claude 4 Sonnet + Grok-4.1-fast fallback
 - [x] Config updated: `provider = "openrouter"`, `fallback_model` support
-- [ ] Set up Betfair API app key + session token flow
+- [x] Set up Betfair API app key + session token flow (SSO auth with auto-renewal)
 - [ ] Create Manifold account + API key (for writes)
-- [ ] Add dependency: `betfair-rs` (Betfair REST + streaming)
-- [ ] Extend `PredictionPlatform` trait with `scan_markets()`, `get_odds()`, `place_order()`, `get_balance()`
+- [x] Betfair REST API integration via reqwest (market catalogue, market book, order placement, account funds)
+- [x] `BetfairClient` implements full `PredictionPlatform` trait (fetch_markets, place_bet, get_positions, get_balance, check_liquidity)
 - [ ] Docker + env config that lets you flip between manifold / betfair / ibkr with one flag
 - **Milestone**: "Hello world" that lists 10 live markets from both Manifold and Betfair.
 
@@ -196,9 +206,9 @@ This document defines the phased development plan for ORACLE. Each phase produce
 
 **Goal**: Full platform adapters for Betfair and Manifold, with enrichment pipeline.
 
-- [ ] Async parallel enrichment (news, weather, sports APIs) with caching
-- [ ] Implement full `ManifoldPlatform` (reqwest to `https://api.manifold.markets`)
-- [ ] Implement `BetfairPlatform` using betfair-rs (market catalogue, odds streaming, order placement)
+- [x] Async parallel enrichment (news, weather, sports APIs) with caching
+- [x] Implement full `ManifoldPlatform` (reqwest to `https://api.manifold.markets`)
+- [x] Implement `BetfairPlatform` via reqwest (market catalogue, live prices, order placement, account funds)
 - [ ] Basic skeleton for IBKR (TWS/Web API contract discovery — event contracts as options with YES/NO strikes)
 - **Milestone**: Switch platforms with one config line and the engine still runs.
 
@@ -244,6 +254,7 @@ oracle/
 │   ├── types.rs                # Shared types (Market, Side, Trade, etc.)
 │   ├── platforms/
 │   │   ├── mod.rs              # PredictionPlatform trait
+│   │   ├── betfair.rs          # Betfair Exchange (real-money execution)
 │   │   ├── manifold.rs         # Manifold (paper trading + sentiment)
 │   │   ├── metaculus.rs        # Metaculus (read-only cross-reference)
 │   │   ├── forecastex.rs       # IBKR ForecastTrader (optional secondary)
@@ -337,6 +348,7 @@ DATABASE_URL=sqlite://oracle.db
 | `edge.rs` | Threshold detection, category-specific thresholds, boundary conditions |
 | `risk.rs` | Position limits, drawdown multiplier, correlation blocking |
 | `openrouter.rs` | Client construction, model costs, fallback logic |
+| `betfair.rs` | Classification, price extraction, favourite selection, market conversion |
 
 ### Integration Tests
 
@@ -381,10 +393,10 @@ Each phase is complete when:
 | 6 (v1) | Bets placed | Dry-run trades + Manifold paper bets |
 | 7 (v1) | Dashboard live | Web UI showing all metrics |
 | 8 (v1) | Backtested | Calibration module + replay engine |
-| 0 (v2) | Credentials ready | OpenRouter + Betfair + Manifold API keys configured |
+| 0 (v2) | Credentials + adapters ready | OpenRouter + Betfair adapter complete, Manifold API key pending |
 | 1 (v2) | Backtester proven | +EV confirmed on 300+ historical markets |
 | 2 (v2) | LLM calibrated | Calibration table showing real edge |
-| 3 (v2) | Adapters ready | Betfair + Manifold platform switching works |
+| 3 (v2) | Adapters ready | Betfair + Manifold adapters complete, IBKR pending |
 | 4 (v2) | Paper trading stable | 3-4 weeks positive paper P&L |
 | 5 (v2) | Live trading | Real-money Betfair execution + IBKR secondary |
 
@@ -395,7 +407,7 @@ Each phase is complete when:
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|-----------|
 | LLM estimates poorly calibrated | Agent loses money faster than it earns | Medium | Phase 8 calibration; start with paper trading; quarter-Kelly conservative sizing |
-| Betfair API rate limits hit during scan | Missed opportunities, wasted cycles | Medium | Caching, batch requests, backoff; betfair-rs handles streaming efficiently |
+| Betfair API rate limits hit during scan | Missed opportunities, wasted cycles | Medium | Caching, batch requests (40 markets/batch), backoff; session auto-renewal |
 | Betfair API changes or outage | No execution possible | Low | Trait-based abstraction; IBKR as secondary venue; Manifold for continuous validation |
 | Single execution venue dependency | If Betfair unavailable, zero execution | Medium | IBKR ForecastTrader as secondary module; Manifold paper-trading continuous |
 | LLM API outage (OpenRouter) | No estimates possible | Medium | Automatic fallback from Claude to Grok; skip cycle on total failure |

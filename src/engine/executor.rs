@@ -9,6 +9,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use tracing::{debug, info, warn};
 
+use crate::platforms::betfair::BetfairClient;
 use crate::platforms::manifold::ManifoldClient;
 use crate::platforms::PredictionPlatform;
 use crate::strategy::kelly::SizedBet;
@@ -49,13 +50,30 @@ pub struct FailedTrade {
 
 pub struct Executor {
     manifold: Option<ManifoldClient>,
+    betfair: Option<BetfairClient>,
     // forecastex: Option<ForecastExClient>,  // Phase 2A
     dry_run: bool,
 }
 
 impl Executor {
     pub fn new(manifold: Option<ManifoldClient>, dry_run: bool) -> Self {
-        Self { manifold, dry_run }
+        Self {
+            manifold,
+            betfair: None,
+            dry_run,
+        }
+    }
+
+    pub fn with_betfair(
+        manifold: Option<ManifoldClient>,
+        betfair: Option<BetfairClient>,
+        dry_run: bool,
+    ) -> Self {
+        Self {
+            manifold,
+            betfair,
+            dry_run,
+        }
     }
 
     /// Execute a batch of sized bets.
@@ -126,6 +144,37 @@ impl Executor {
                 }
             }
 
+            // Try Betfair real-money execution
+            if let Some(ref betfair) = self.betfair {
+                if bet.edge.market.platform == "betfair" {
+                    match self.execute_on_betfair(betfair, bet).await {
+                        Ok(receipt) => {
+                            report.total_commission += receipt.fees;
+                            report.executed.push(ExecutedTrade {
+                                market_id: bet.edge.market.id.clone(),
+                                platform: "betfair".to_string(),
+                                side: bet.edge.side.clone(),
+                                amount: bet.bet_amount,
+                                receipt,
+                            });
+                            report.total_committed += bet.bet_amount;
+                        }
+                        Err(e) => {
+                            warn!(
+                                market_id = %bet.edge.market.id,
+                                error = %e,
+                                "Betfair execution failed"
+                            );
+                            report.failed.push(FailedTrade {
+                                market_id: bet.edge.market.id.clone(),
+                                platform: "betfair".to_string(),
+                                reason: e.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+
             // TODO (Phase 2A): Execute on IB ForecastEx
         }
 
@@ -137,6 +186,21 @@ impl Executor {
         );
 
         Ok(report)
+    }
+
+    async fn execute_on_betfair(
+        &self,
+        client: &BetfairClient,
+        bet: &SizedBet,
+    ) -> Result<TradeReceipt> {
+        if bet.edge.market.platform != "betfair" {
+            anyhow::bail!("Market {} is not a Betfair market", bet.edge.market.id);
+        }
+
+        client
+            .place_bet(&bet.edge.market.id, bet.edge.side.clone(), bet.bet_amount)
+            .await
+            .context("Betfair bet placement failed")
     }
 
     async fn execute_on_manifold(

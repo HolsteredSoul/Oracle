@@ -26,6 +26,12 @@ enabled = true                 # Read-only cross-reference
 [platforms.manifold]
 enabled = true                 # Play-money validation + sentiment signal
 
+[platforms.betfair]
+enabled = false                # Betfair Exchange — real-money execution
+app_key_env = "BETFAIR_APP_KEY"
+username_env = "BETFAIR_USERNAME"
+password_env = "BETFAIR_PASSWORD"
+
 [risk]
 mispricing_threshold = 0.08
 kelly_multiplier = 0.25

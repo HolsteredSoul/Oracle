@@ -5,6 +5,7 @@
 //! - Metaculus — read-only crowd forecast cross-reference
 //! - Manifold — play-money validation and sentiment signal
 
+pub mod betfair;
 pub mod forecastex;
 pub mod metaculus;
 pub mod manifold;
