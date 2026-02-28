@@ -17,6 +17,7 @@ use oracle::engine::scanner::MarketRouter;
 use oracle::llm::anthropic::AnthropicClient;
 use oracle::llm::openrouter::OpenRouterClient;
 use oracle::llm::LlmEstimator;
+use oracle::platforms::betfair::BetfairClient;
 use oracle::platforms::manifold::ManifoldClient;
 use oracle::platforms::metaculus::MetaculusClient;
 use oracle::storage;
@@ -92,8 +93,27 @@ async fn main() -> Result<()> {
         None
     };
 
+    let betfair = if cfg.platforms.betfair.enabled {
+        match BetfairClient::new() {
+            Ok(client) => {
+                info!("Betfair Exchange enabled");
+                Some(client)
+            }
+            Err(e) => {
+                warn!(error = %e, "Betfair init failed (credentials missing?), continuing without");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Market router (takes ownership of platform clients)
-    let router = MarketRouter::new(manifold, metaculus);
+    let router = if betfair.is_some() {
+        MarketRouter::with_betfair(betfair.unwrap(), manifold, metaculus)
+    } else {
+        MarketRouter::new(manifold, metaculus)
+    };
 
     // Data enricher
     let fred_key = cfg.data_sources.fred_api_key_env.as_deref()
@@ -168,9 +188,14 @@ async fn main() -> Result<()> {
         }),
     );
 
-    // Executor (dry-run until IB ForecastEx is integrated in Phase 2A)
-    // Manifold execution requires a separate client with API key
-    let executor = Executor::new(None, true);
+    // Executor — create a separate Betfair client for execution if enabled
+    let executor_betfair = if cfg.platforms.betfair.enabled {
+        BetfairClient::new().ok()
+    } else {
+        None
+    };
+    let dry_run = executor_betfair.is_none(); // dry-run if no real-money venue
+    let executor = Executor::with_betfair(None, executor_betfair, dry_run);
 
     // -- Main loop -------------------------------------------------------
 

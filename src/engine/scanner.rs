@@ -14,6 +14,7 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use tracing::{debug, info, warn};
 
+use crate::platforms::betfair::BetfairClient;
 use crate::platforms::manifold::ManifoldClient;
 use crate::platforms::metaculus::MetaculusClient;
 use crate::platforms::polymarket::PolymarketClient;
@@ -103,6 +104,7 @@ pub struct MarketRouter {
     manifold: Option<ManifoldClient>,
     metaculus: Option<MetaculusClient>,
     polymarket: Option<PolymarketClient>,
+    betfair: Option<BetfairClient>,
 }
 
 impl MarketRouter {
@@ -117,6 +119,21 @@ impl MarketRouter {
             manifold,
             metaculus,
             polymarket: None,
+            betfair: None,
+        }
+    }
+
+    /// Create a router with Betfair as a real-money execution venue.
+    pub fn with_betfair(
+        betfair: BetfairClient,
+        manifold: Option<ManifoldClient>,
+        metaculus: Option<MetaculusClient>,
+    ) -> Self {
+        Self {
+            manifold,
+            metaculus,
+            polymarket: None,
+            betfair: Some(betfair),
         }
     }
 
@@ -130,6 +147,7 @@ impl MarketRouter {
             manifold,
             metaculus,
             polymarket: Some(polymarket),
+            betfair: None,
         }
     }
 
@@ -141,10 +159,11 @@ impl MarketRouter {
         info!("Starting multi-platform market scan...");
 
         // 1. Fetch from all platforms concurrently
-        let (manifold_markets, metaculus_markets, polymarket_markets) = tokio::join!(
+        let (manifold_markets, metaculus_markets, polymarket_markets, betfair_markets) = tokio::join!(
             self.fetch_manifold(),
             self.fetch_metaculus(),
             self.fetch_polymarket(),
+            self.fetch_betfair(),
         );
 
         let mut manifold_markets = manifold_markets.unwrap_or_else(|e| {
@@ -162,10 +181,16 @@ impl MarketRouter {
             Vec::new()
         });
 
+        let betfair_markets = betfair_markets.unwrap_or_else(|e| {
+            warn!(error = %e, "Betfair scan failed, continuing without");
+            Vec::new()
+        });
+
         info!(
             manifold = manifold_markets.len(),
             metaculus = metaculus_markets.len(),
             polymarket = polymarket_markets.len(),
+            betfair = betfair_markets.len(),
             "Raw markets fetched"
         );
 
@@ -173,10 +198,11 @@ impl MarketRouter {
         Self::cross_reference(&mut manifold_markets, &metaculus_markets);
 
         // 3. Merge all markets into a single list
-        //    Polymarket markets are primary (real-money execution venue).
+        //    Betfair & Polymarket markets are primary (real-money execution venues).
         //    Manifold markets are secondary (play-money validation).
         //    Metaculus-only markets are informational signals.
-        let mut all_markets = polymarket_markets;
+        let mut all_markets = betfair_markets;
+        all_markets.extend(polymarket_markets);
         all_markets.extend(manifold_markets);
 
         // Add Metaculus markets that didn't match any Manifold market
@@ -236,6 +262,13 @@ impl MarketRouter {
 
     async fn fetch_polymarket(&self) -> Result<Vec<Market>> {
         match &self.polymarket {
+            Some(client) => client.fetch_markets().await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    async fn fetch_betfair(&self) -> Result<Vec<Market>> {
+        match &self.betfair {
             Some(client) => client.fetch_markets().await,
             None => Ok(Vec::new()),
         }

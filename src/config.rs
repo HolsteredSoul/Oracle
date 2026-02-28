@@ -48,6 +48,8 @@ pub struct PlatformsConfig {
     pub forecastex: ForecastExConfig,
     pub metaculus: MetaculusConfig,
     pub manifold: ManifoldConfig,
+    #[serde(default)]
+    pub betfair: BetfairConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -67,6 +69,43 @@ pub struct MetaculusConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ManifoldConfig {
     pub enabled: bool,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct BetfairConfig {
+    pub enabled: bool,
+    /// Env var name for Betfair app key (default: "BETFAIR_APP_KEY").
+    #[serde(default = "BetfairConfig::default_app_key_env")]
+    pub app_key_env: String,
+    /// Env var name for Betfair username (default: "BETFAIR_USERNAME").
+    #[serde(default = "BetfairConfig::default_username_env")]
+    pub username_env: String,
+    /// Env var name for Betfair password (default: "BETFAIR_PASSWORD").
+    #[serde(default = "BetfairConfig::default_password_env")]
+    pub password_env: String,
+}
+
+impl Default for BetfairConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            app_key_env: "BETFAIR_APP_KEY".to_string(),
+            username_env: "BETFAIR_USERNAME".to_string(),
+            password_env: "BETFAIR_PASSWORD".to_string(),
+        }
+    }
+}
+
+impl BetfairConfig {
+    fn default_app_key_env() -> String {
+        "BETFAIR_APP_KEY".to_string()
+    }
+    fn default_username_env() -> String {
+        "BETFAIR_USERNAME".to_string()
+    }
+    fn default_password_env() -> String {
+        "BETFAIR_PASSWORD".to_string()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
