@@ -14,6 +14,7 @@ use oracle::engine::enricher::Enricher;
 use oracle::engine::executor::Executor;
 use oracle::engine::scanner::MarketRouter;
 use oracle::llm::anthropic::AnthropicClient;
+use oracle::llm::openrouter::OpenRouterClient;
 use oracle::llm::LlmEstimator;
 use oracle::platforms::manifold::ManifoldClient;
 use oracle::platforms::metaculus::MetaculusClient;
@@ -106,10 +107,40 @@ async fn main() -> Result<()> {
 
     let llm: Box<dyn LlmEstimator> = if llm_api_key.is_empty() {
         warn!("No LLM API key configured — running in dry-run/scan-only mode");
-        // We'll skip estimation in the loop
         Box::new(AnthropicClient::new("dummy".into(), Some(cfg.llm.model.clone()), None)?)
     } else {
-        Box::new(AnthropicClient::new(llm_api_key, Some(cfg.llm.model.clone()), None)?)
+        match cfg.llm.provider.as_str() {
+            "openrouter" => {
+                info!(
+                    model = %cfg.llm.model,
+                    fallback = ?cfg.llm.fallback_model,
+                    "Using OpenRouter LLM provider"
+                );
+                Box::new(OpenRouterClient::new(
+                    llm_api_key,
+                    Some(cfg.llm.model.clone()),
+                    cfg.llm.fallback_model.clone(),
+                    Some(cfg.llm.max_tokens),
+                )?)
+            }
+            "anthropic" => {
+                info!(model = %cfg.llm.model, "Using Anthropic LLM provider");
+                Box::new(AnthropicClient::new(
+                    llm_api_key,
+                    Some(cfg.llm.model.clone()),
+                    Some(cfg.llm.max_tokens),
+                )?)
+            }
+            other => {
+                warn!(provider = other, "Unknown LLM provider, defaulting to OpenRouter");
+                Box::new(OpenRouterClient::new(
+                    llm_api_key,
+                    Some(cfg.llm.model.clone()),
+                    cfg.llm.fallback_model.clone(),
+                    Some(cfg.llm.max_tokens),
+                )?)
+            }
+        }
     };
 
     // Strategy orchestrator (edge detection → Kelly sizing → risk approval)

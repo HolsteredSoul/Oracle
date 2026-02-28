@@ -6,10 +6,11 @@ survival_threshold = 0.0       # Die at $0
 currency = "AUD"
 
 [llm]
-provider = "anthropic"         # "anthropic" | "openai" | "grok"
-model = "claude-sonnet-4-20250514"
-api_key_env = "ANTHROPIC_API_KEY"
-max_tokens = 500
+provider = "openrouter"        # "openrouter" | "anthropic" | "openai"
+model = "anthropic/claude-sonnet-4"
+fallback_model = "x-ai/grok-4.1-fast"
+api_key_env = "OPENROUTER_API_KEY"
+max_tokens = 1024
 batch_size = 10                # Markets per LLM call
 
 [platforms.forecastex]

@@ -37,6 +37,9 @@ pub struct LlmConfig {
     pub api_key_env: String,
     pub max_tokens: u32,
     pub batch_size: u32,
+    /// Fallback model for OpenRouter (used when primary model fails).
+    #[serde(default)]
+    pub fallback_model: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -132,7 +135,7 @@ mod tests {
             assert_eq!(cfg.agent.name, "ORACLE-001");
             assert_eq!(cfg.agent.scan_interval_secs, 600);
             assert!(cfg.agent.initial_bankroll > 0.0);
-            assert_eq!(cfg.llm.provider, "anthropic");
+            assert_eq!(cfg.llm.provider, "openrouter");
             assert!(cfg.platforms.forecastex.enabled);
             assert!(cfg.risk.kelly_multiplier > 0.0);
             assert!(cfg.risk.kelly_multiplier <= 1.0);
