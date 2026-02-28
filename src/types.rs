@@ -5,8 +5,17 @@
 //! and engine modules can depend on them without circular references.
 
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::*;
+use rust_decimal_macros::dec;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+
+/// Convert an f64 to Decimal at API boundaries.
+/// Returns Decimal::ZERO for NaN/Infinity.
+pub fn d(val: f64) -> Decimal {
+    Decimal::from_f64_retain(val).unwrap_or(Decimal::ZERO)
+}
 
 // ---------------------------------------------------------------------------
 // Market
@@ -22,13 +31,13 @@ pub struct Market {
     pub description: String,
     pub category: MarketCategory,
     /// Current YES price (0.0–1.0)
-    pub current_price_yes: f64,
+    pub current_price_yes: Decimal,
     /// Current NO price (0.0–1.0)
-    pub current_price_no: f64,
+    pub current_price_no: Decimal,
     /// 24-hour volume in USD equivalent
-    pub volume_24h: f64,
+    pub volume_24h: Decimal,
     /// Available liquidity in USD equivalent
-    pub liquidity: f64,
+    pub liquidity: Decimal,
     /// Market resolution deadline
     pub deadline: DateTime<Utc>,
     pub resolution_criteria: String,
@@ -41,12 +50,12 @@ impl fmt::Display for Market {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "[{}] {} (YES: {:.0}¢ | NO: {:.0}¢ | vol: ${:.0} | {})",
+            "[{}] {} (YES: {}¢ | NO: {}¢ | vol: ${} | {})",
             self.platform,
             self.question,
-            self.current_price_yes * 100.0,
-            self.current_price_no * 100.0,
-            self.volume_24h,
+            (self.current_price_yes * dec!(100)).round(),
+            (self.current_price_no * dec!(100)).round(),
+            self.volume_24h.round(),
             self.category,
         )
     }
@@ -54,13 +63,13 @@ impl fmt::Display for Market {
 
 impl Market {
     /// The mid-price between YES and NO (useful as a quick reference).
-    pub fn mid_price(&self) -> f64 {
-        (self.current_price_yes + (1.0 - self.current_price_no)) / 2.0
+    pub fn mid_price(&self) -> Decimal {
+        (self.current_price_yes + (Decimal::ONE - self.current_price_no)) / dec!(2)
     }
 
     /// Spread between YES and (1 - NO) prices — a measure of market efficiency.
-    pub fn spread(&self) -> f64 {
-        (self.current_price_yes - (1.0 - self.current_price_no)).abs()
+    pub fn spread(&self) -> Decimal {
+        (self.current_price_yes - (Decimal::ONE - self.current_price_no)).abs()
     }
 
     /// Whether the market is still active (deadline in the future).
@@ -82,18 +91,18 @@ impl Market {
             question: "Will CPI exceed 3% in Q1 2026?".to_string(),
             description: "Resolves YES if the BLS reports CPI > 3% for Q1 2026.".to_string(),
             category: MarketCategory::Economics,
-            current_price_yes: 0.45,
-            current_price_no: 0.55,
-            volume_24h: 5000.0,
-            liquidity: 12000.0,
+            current_price_yes: dec!(0.45),
+            current_price_no: dec!(0.55),
+            volume_24h: dec!(5000),
+            liquidity: dec!(12000),
             deadline: Utc::now() + chrono::Duration::days(30),
             resolution_criteria: "Based on BLS CPI report".to_string(),
             url: "https://forecastex.example.com/test-001".to_string(),
             cross_refs: CrossReferences {
-                metaculus_prob: Some(0.52),
+                metaculus_prob: Some(dec!(0.52)),
                 metaculus_forecasters: Some(314),
-                manifold_prob: Some(0.48),
-                forecastex_price: Some(0.45),
+                manifold_prob: Some(dec!(0.48)),
+                forecastex_price: Some(dec!(0.45)),
             },
         }
     }
@@ -102,10 +111,10 @@ impl Market {
 /// Cross-platform reference probabilities.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CrossReferences {
-    pub metaculus_prob: Option<f64>,
+    pub metaculus_prob: Option<Decimal>,
     pub metaculus_forecasters: Option<u32>,
-    pub manifold_prob: Option<f64>,
-    pub forecastex_price: Option<f64>,
+    pub manifold_prob: Option<Decimal>,
+    pub forecastex_price: Option<Decimal>,
 }
 
 impl fmt::Display for CrossReferences {
@@ -113,13 +122,13 @@ impl fmt::Display for CrossReferences {
         let mut parts = Vec::new();
         if let Some(p) = self.metaculus_prob {
             let n = self.metaculus_forecasters.unwrap_or(0);
-            parts.push(format!("Metaculus: {:.0}% (n={n})", p * 100.0));
+            parts.push(format!("Metaculus: {}% (n={n})", (p * dec!(100)).round()));
         }
         if let Some(p) = self.manifold_prob {
-            parts.push(format!("Manifold: {:.0}%", p * 100.0));
+            parts.push(format!("Manifold: {}%", (p * dec!(100)).round()));
         }
         if let Some(p) = self.forecastex_price {
-            parts.push(format!("ForecastEx: {:.0}¢", p * 100.0));
+            parts.push(format!("ForecastEx: {}¢", (p * dec!(100)).round()));
         }
         if parts.is_empty() {
             write!(f, "No cross-references")
@@ -241,9 +250,9 @@ pub struct TradeReceipt {
     pub market_id: String,
     pub platform: String,
     pub side: Side,
-    pub amount: f64,
-    pub fill_price: f64,
-    pub fees: f64,
+    pub amount: Decimal,
+    pub fill_price: Decimal,
+    pub fees: Decimal,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -251,12 +260,12 @@ impl fmt::Display for TradeReceipt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "[{}] {} {} ${:.2} @ {:.2}¢ (fees: ${:.4}) [{}]",
+            "[{}] {} {} ${:.2} @ {}¢ (fees: ${:.4}) [{}]",
             self.platform,
             self.side,
             self.market_id,
             self.amount,
-            self.fill_price * 100.0,
+            (self.fill_price * dec!(100)).round_dp(2),
             self.fees,
             self.order_id,
         )
@@ -265,7 +274,7 @@ impl fmt::Display for TradeReceipt {
 
 impl TradeReceipt {
     /// Net cost of this trade (amount + fees).
-    pub fn net_cost(&self) -> f64 {
+    pub fn net_cost(&self) -> Decimal {
         self.amount + self.fees
     }
 }
@@ -276,23 +285,23 @@ pub struct Position {
     pub market_id: String,
     pub platform: String,
     pub side: Side,
-    pub size: f64,
-    pub entry_price: f64,
-    pub current_value: f64,
+    pub size: Decimal,
+    pub entry_price: Decimal,
+    pub current_value: Decimal,
 }
 
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let pnl = self.unrealized_pnl();
-        let pnl_sign = if pnl >= 0.0 { "+" } else { "" };
+        let pnl_sign = if pnl >= Decimal::ZERO { "+" } else { "" };
         write!(
             f,
-            "[{}] {} {} size={:.2} entry={:.2}¢ val=${:.2} ({pnl_sign}{pnl:.2})",
+            "[{}] {} {} size={:.2} entry={}¢ val=${:.2} ({pnl_sign}{pnl:.2})",
             self.platform,
             self.side,
             self.market_id,
             self.size,
-            self.entry_price * 100.0,
+            (self.entry_price * dec!(100)).round_dp(2),
             self.current_value,
         )
     }
@@ -300,7 +309,7 @@ impl fmt::Display for Position {
 
 impl Position {
     /// Unrealized P&L (current_value - size * entry_price).
-    pub fn unrealized_pnl(&self) -> f64 {
+    pub fn unrealized_pnl(&self) -> Decimal {
         self.current_value - (self.size * self.entry_price)
     }
 }
@@ -308,29 +317,31 @@ impl Position {
 /// Order book / liquidity information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiquidityInfo {
-    pub bid_depth: f64,
-    pub ask_depth: f64,
-    pub volume_24h: f64,
+    pub bid_depth: Decimal,
+    pub ask_depth: Decimal,
+    pub volume_24h: Decimal,
 }
 
 impl fmt::Display for LiquidityInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "bid_depth=${:.0} ask_depth=${:.0} vol_24h=${:.0}",
-            self.bid_depth, self.ask_depth, self.volume_24h,
+            "bid_depth=${} ask_depth=${} vol_24h=${}",
+            self.bid_depth.round(),
+            self.ask_depth.round(),
+            self.volume_24h.round(),
         )
     }
 }
 
 impl LiquidityInfo {
     /// Total depth (bid + ask).
-    pub fn total_depth(&self) -> f64 {
+    pub fn total_depth(&self) -> Decimal {
         self.bid_depth + self.ask_depth
     }
 
     /// Whether this market has sufficient liquidity given a threshold.
-    pub fn is_sufficient(&self, min_depth: f64) -> bool {
+    pub fn is_sufficient(&self, min_depth: Decimal) -> bool {
         self.total_depth() >= min_depth
     }
 }
@@ -345,15 +356,15 @@ pub struct BetDecision {
     pub market: Market,
     pub side: Side,
     /// LLM fair-value estimate (probability)
-    pub fair_value: f64,
+    pub fair_value: Decimal,
     /// |fair_value - market_price|
-    pub edge: f64,
+    pub edge: Decimal,
     /// Raw Kelly fraction
-    pub kelly_fraction: f64,
+    pub kelly_fraction: Decimal,
     /// Final bet amount after caps and risk limits
-    pub bet_amount: f64,
+    pub bet_amount: Decimal,
     /// LLM self-reported confidence (0–1)
-    pub confidence: f64,
+    pub confidence: Decimal,
     /// LLM reasoning summary
     pub rationale: String,
     /// List of data sources used for the estimate
@@ -362,32 +373,33 @@ pub struct BetDecision {
 
 impl fmt::Display for BetDecision {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mkt_price = match self.side {
+            Side::Yes => self.market.current_price_yes,
+            Side::No => self.market.current_price_no,
+        };
         write!(
             f,
-            "{} {} | fair={:.0}% mkt={:.0}% edge={:.1}% | kelly={:.1}% bet=${:.2} | conf={:.0}%",
+            "{} {} | fair={}% mkt={}% edge={:.1}% | kelly={:.1}% bet=${:.2} | conf={}%",
             self.side,
             self.market.question,
-            self.fair_value * 100.0,
-            match self.side {
-                Side::Yes => self.market.current_price_yes,
-                Side::No => self.market.current_price_no,
-            } * 100.0,
-            self.edge * 100.0,
-            self.kelly_fraction * 100.0,
+            (self.fair_value * dec!(100)).round(),
+            (mkt_price * dec!(100)).round(),
+            self.edge * dec!(100),
+            self.kelly_fraction * dec!(100),
             self.bet_amount,
-            self.confidence * 100.0,
+            (self.confidence * dec!(100)).round(),
         )
     }
 }
 
 impl BetDecision {
     /// Expected value of this bet: edge × bet_amount.
-    pub fn expected_value(&self) -> f64 {
+    pub fn expected_value(&self) -> Decimal {
         self.edge * self.bet_amount
     }
 
     /// The market price on the side we're betting.
-    pub fn market_price(&self) -> f64 {
+    pub fn market_price(&self) -> Decimal {
         match self.side {
             Side::Yes => self.market.current_price_yes,
             Side::No => self.market.current_price_no,
@@ -398,22 +410,22 @@ impl BetDecision {
 /// LLM probability estimate for a market.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Estimate {
-    pub probability: f64,
+    pub probability: Decimal,
     /// LLM self-reported confidence (0–1)
-    pub confidence: f64,
+    pub confidence: Decimal,
     /// Chain-of-thought reasoning summary
     pub reasoning: String,
     pub tokens_used: u32,
-    pub cost: f64,
+    pub cost: Decimal,
 }
 
 impl fmt::Display for Estimate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "P={:.1}% conf={:.0}% (tokens={} cost=${:.4})",
-            self.probability * 100.0,
-            self.confidence * 100.0,
+            "P={:.1}% conf={}% (tokens={} cost=${:.4})",
+            self.probability * dec!(100),
+            (self.confidence * dec!(100)).round(),
             self.tokens_used,
             self.cost,
         )
@@ -422,15 +434,12 @@ impl fmt::Display for Estimate {
 
 impl Estimate {
     /// Whether this estimate is within valid bounds [0.01, 0.99].
-    /// Estimates outside this range indicate overconfidence.
     pub fn is_valid(&self) -> bool {
-        self.probability >= 0.01 && self.probability <= 0.99
+        self.probability >= dec!(0.01) && self.probability <= dec!(0.99)
     }
 
     /// Whether the estimate is suspiciously close to a given market price.
-    /// This may indicate the LLM is echoing the market rather than
-    /// providing an independent estimate.
-    pub fn is_echo(&self, market_price: f64, tolerance: f64) -> bool {
+    pub fn is_echo(&self, market_price: Decimal, tolerance: Decimal) -> bool {
         (self.probability - market_price).abs() < tolerance
     }
 }
@@ -452,11 +461,11 @@ pub struct DataContext {
     /// Data source name
     pub source: String,
     /// API call cost in USD
-    pub cost: f64,
+    pub cost: Decimal,
     /// Cross-reference probabilities
-    pub metaculus_forecast: Option<f64>,
+    pub metaculus_forecast: Option<Decimal>,
     pub metaculus_forecasters: Option<u32>,
-    pub manifold_price: Option<f64>,
+    pub manifold_price: Option<Decimal>,
 }
 
 impl fmt::Display for DataContext {
@@ -490,7 +499,7 @@ impl DataContext {
             summary: "No enrichment data available.".to_string(),
             freshness: Utc::now(),
             source: "none".to_string(),
-            cost: 0.0,
+            cost: Decimal::ZERO,
             metaculus_forecast: None,
             metaculus_forecasters: None,
             manifold_price: None,
@@ -502,19 +511,19 @@ impl DataContext {
 // Agent state
 // ---------------------------------------------------------------------------
 
-/// Persistent agent state, saved to SQLite after each cycle.
+/// Persistent agent state, saved to JSON after each cycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentState {
-    pub bankroll: f64,
-    pub total_pnl: f64,
+    pub bankroll: Decimal,
+    pub total_pnl: Decimal,
     pub cycle_count: u64,
     pub trades_placed: u64,
     pub trades_won: u64,
     pub trades_lost: u64,
-    pub total_api_costs: f64,
-    pub total_ib_commissions: f64,
+    pub total_api_costs: Decimal,
+    pub total_ib_commissions: Decimal,
     pub start_time: DateTime<Utc>,
-    pub peak_bankroll: f64,
+    pub peak_bankroll: Decimal,
     pub status: AgentStatus,
 }
 
@@ -531,7 +540,7 @@ impl fmt::Display for AgentState {
             self.trades_won,
             self.trades_lost,
             self.win_rate(),
-            self.drawdown() * 100.0,
+            self.drawdown() * dec!(100),
             self.total_costs(),
         )
     }
@@ -539,16 +548,16 @@ impl fmt::Display for AgentState {
 
 impl AgentState {
     /// Create a new agent state with the given initial bankroll.
-    pub fn new(initial_bankroll: f64) -> Self {
+    pub fn new(initial_bankroll: Decimal) -> Self {
         Self {
             bankroll: initial_bankroll,
-            total_pnl: 0.0,
+            total_pnl: Decimal::ZERO,
             cycle_count: 0,
             trades_placed: 0,
             trades_won: 0,
             trades_lost: 0,
-            total_api_costs: 0.0,
-            total_ib_commissions: 0.0,
+            total_api_costs: Decimal::ZERO,
+            total_ib_commissions: Decimal::ZERO,
             start_time: Utc::now(),
             peak_bankroll: initial_bankroll,
             status: AgentStatus::Alive,
@@ -566,16 +575,16 @@ impl AgentState {
     }
 
     /// Current drawdown from peak as a fraction (0.0 = at peak).
-    pub fn drawdown(&self) -> f64 {
-        if self.peak_bankroll <= 0.0 {
-            0.0
+    pub fn drawdown(&self) -> Decimal {
+        if self.peak_bankroll <= Decimal::ZERO {
+            Decimal::ZERO
         } else {
-            1.0 - (self.bankroll / self.peak_bankroll)
+            Decimal::ONE - (self.bankroll / self.peak_bankroll)
         }
     }
 
     /// Total combined costs (API + IB commissions).
-    pub fn total_costs(&self) -> f64 {
+    pub fn total_costs(&self) -> Decimal {
         self.total_api_costs + self.total_ib_commissions
     }
 
@@ -603,11 +612,11 @@ impl AgentState {
 
     /// Deduct a cost from the bankroll and track it. Returns false if
     /// the agent has died (bankroll <= 0).
-    pub fn deduct_cost(&mut self, api_cost: f64, ib_commission: f64) -> bool {
+    pub fn deduct_cost(&mut self, api_cost: Decimal, ib_commission: Decimal) -> bool {
         self.total_api_costs += api_cost;
         self.total_ib_commissions += ib_commission;
         self.bankroll -= api_cost + ib_commission;
-        if self.bankroll <= 0.0 {
+        if self.bankroll <= Decimal::ZERO {
             self.status = AgentStatus::Died;
             false
         } else {
@@ -616,7 +625,7 @@ impl AgentState {
     }
 
     /// Record a resolved trade outcome.
-    pub fn record_resolution(&mut self, pnl: f64, won: bool) {
+    pub fn record_resolution(&mut self, pnl: Decimal, won: bool) {
         self.total_pnl += pnl;
         self.bankroll += pnl;
         if won {
@@ -645,9 +654,9 @@ pub struct CycleReport {
     pub markets_scanned: u64,
     pub edges_found: u64,
     pub bets_placed: u64,
-    pub cycle_cost: f64,
-    pub cycle_pnl: f64,
-    pub bankroll_after: f64,
+    pub cycle_cost: Decimal,
+    pub cycle_pnl: Decimal,
+    pub bankroll_after: Decimal,
 }
 
 impl fmt::Display for CycleReport {
@@ -689,7 +698,7 @@ pub enum OracleError {
     RiskLimit(String),
 
     #[error("Insufficient balance: need ${needed:.2}, have ${available:.2}")]
-    InsufficientBalance { needed: f64, available: f64 },
+    InsufficientBalance { needed: Decimal, available: Decimal },
 
     #[error("Market not found: {0}")]
     MarketNotFound(String),
@@ -794,22 +803,22 @@ mod tests {
 
     #[test]
     fn test_agent_state_new() {
-        let state = AgentState::new(100.0);
-        assert_eq!(state.bankroll, 100.0);
-        assert_eq!(state.total_pnl, 0.0);
+        let state = AgentState::new(dec!(100));
+        assert_eq!(state.bankroll, dec!(100));
+        assert_eq!(state.total_pnl, Decimal::ZERO);
         assert_eq!(state.cycle_count, 0);
         assert_eq!(state.status, AgentStatus::Alive);
         assert_eq!(state.win_rate(), 0.0);
-        assert_eq!(state.drawdown(), 0.0);
+        assert_eq!(state.drawdown(), Decimal::ZERO);
         assert!(state.is_alive());
-        assert_eq!(state.total_costs(), 0.0);
+        assert_eq!(state.total_costs(), Decimal::ZERO);
         assert_eq!(state.trades_resolved(), 0);
         assert_eq!(state.trades_pending(), 0);
     }
 
     #[test]
     fn test_agent_state_win_rate() {
-        let mut state = AgentState::new(100.0);
+        let mut state = AgentState::new(dec!(100));
         state.trades_won = 7;
         state.trades_lost = 3;
         assert!((state.win_rate() - 70.0).abs() < f64::EPSILON);
@@ -817,63 +826,63 @@ mod tests {
 
     #[test]
     fn test_agent_state_drawdown() {
-        let mut state = AgentState::new(100.0);
-        state.peak_bankroll = 200.0;
-        state.bankroll = 150.0;
-        assert!((state.drawdown() - 0.25).abs() < f64::EPSILON);
+        let mut state = AgentState::new(dec!(100));
+        state.peak_bankroll = dec!(200);
+        state.bankroll = dec!(150);
+        assert_eq!(state.drawdown(), dec!(0.25));
     }
 
     #[test]
     fn test_agent_state_drawdown_zero_peak() {
-        let mut state = AgentState::new(0.0);
-        state.peak_bankroll = 0.0;
-        assert_eq!(state.drawdown(), 0.0);
+        let mut state = AgentState::new(Decimal::ZERO);
+        state.peak_bankroll = Decimal::ZERO;
+        assert_eq!(state.drawdown(), Decimal::ZERO);
     }
 
     #[test]
     fn test_agent_state_deduct_cost_alive() {
-        let mut state = AgentState::new(100.0);
-        assert!(state.deduct_cost(0.10, 0.25));
-        assert!((state.bankroll - 99.65).abs() < 1e-10);
-        assert!((state.total_api_costs - 0.10).abs() < 1e-10);
-        assert!((state.total_ib_commissions - 0.25).abs() < 1e-10);
+        let mut state = AgentState::new(dec!(100));
+        assert!(state.deduct_cost(dec!(0.10), dec!(0.25)));
+        assert_eq!(state.bankroll, dec!(99.65));
+        assert_eq!(state.total_api_costs, dec!(0.10));
+        assert_eq!(state.total_ib_commissions, dec!(0.25));
         assert!(state.is_alive());
     }
 
     #[test]
     fn test_agent_state_deduct_cost_death() {
-        let mut state = AgentState::new(0.50);
-        assert!(!state.deduct_cost(0.30, 0.25));
+        let mut state = AgentState::new(dec!(0.50));
+        assert!(!state.deduct_cost(dec!(0.30), dec!(0.25)));
         assert_eq!(state.status, AgentStatus::Died);
         assert!(!state.is_alive());
     }
 
     #[test]
     fn test_agent_state_record_resolution_win() {
-        let mut state = AgentState::new(100.0);
+        let mut state = AgentState::new(dec!(100));
         state.trades_placed = 1;
-        state.record_resolution(15.0, true);
+        state.record_resolution(dec!(15), true);
         assert_eq!(state.trades_won, 1);
         assert_eq!(state.trades_lost, 0);
-        assert!((state.bankroll - 115.0).abs() < 1e-10);
-        assert!((state.total_pnl - 15.0).abs() < 1e-10);
-        assert!((state.peak_bankroll - 115.0).abs() < 1e-10);
+        assert_eq!(state.bankroll, dec!(115));
+        assert_eq!(state.total_pnl, dec!(15));
+        assert_eq!(state.peak_bankroll, dec!(115));
     }
 
     #[test]
     fn test_agent_state_record_resolution_loss() {
-        let mut state = AgentState::new(100.0);
+        let mut state = AgentState::new(dec!(100));
         state.trades_placed = 1;
-        state.record_resolution(-8.0, false);
+        state.record_resolution(dec!(-8), false);
         assert_eq!(state.trades_won, 0);
         assert_eq!(state.trades_lost, 1);
-        assert!((state.bankroll - 92.0).abs() < 1e-10);
-        assert!((state.peak_bankroll - 100.0).abs() < 1e-10); // peak unchanged
+        assert_eq!(state.bankroll, dec!(92));
+        assert_eq!(state.peak_bankroll, dec!(100)); // peak unchanged
     }
 
     #[test]
     fn test_agent_state_trades_pending() {
-        let mut state = AgentState::new(100.0);
+        let mut state = AgentState::new(dec!(100));
         state.trades_placed = 10;
         state.trades_won = 4;
         state.trades_lost = 3;
@@ -883,19 +892,19 @@ mod tests {
 
     #[test]
     fn test_agent_state_serialization_roundtrip() {
-        let state = AgentState::new(50.0);
+        let state = AgentState::new(dec!(50));
         let json = serde_json::to_string(&state).unwrap();
         let parsed: AgentState = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.bankroll, 50.0);
+        assert_eq!(parsed.bankroll, dec!(50));
         assert_eq!(parsed.status, AgentStatus::Alive);
     }
 
     #[test]
     fn test_agent_state_display() {
-        let state = AgentState::new(100.0);
+        let state = AgentState::new(dec!(100));
         let display = format!("{state}");
         assert!(display.contains("ALIVE"));
-        assert!(display.contains("100.00"));
+        assert!(display.contains("100"));
     }
 
     // -- Market tests --
@@ -916,14 +925,14 @@ mod tests {
     fn test_market_mid_price() {
         let market = Market::sample(); // yes=0.45, no=0.55
         // mid = (0.45 + (1.0 - 0.55)) / 2 = (0.45 + 0.45) / 2 = 0.45
-        assert!((market.mid_price() - 0.45).abs() < 1e-10);
+        assert_eq!(market.mid_price(), dec!(0.45));
     }
 
     #[test]
     fn test_market_spread() {
         let market = Market::sample();
         // spread = |0.45 - (1.0 - 0.55)| = |0.45 - 0.45| = 0.0
-        assert!((market.spread() - 0.0).abs() < 1e-10);
+        assert_eq!(market.spread(), Decimal::ZERO);
     }
 
     #[test]
@@ -953,10 +962,10 @@ mod tests {
     #[test]
     fn test_cross_refs_display_full() {
         let refs = CrossReferences {
-            metaculus_prob: Some(0.60),
+            metaculus_prob: Some(dec!(0.60)),
             metaculus_forecasters: Some(200),
-            manifold_prob: Some(0.55),
-            forecastex_price: Some(0.50),
+            manifold_prob: Some(dec!(0.55)),
+            forecastex_price: Some(dec!(0.50)),
         };
         let display = format!("{refs}");
         assert!(display.contains("Metaculus"));
@@ -973,14 +982,14 @@ mod tests {
     #[test]
     fn test_cross_refs_serialization_roundtrip() {
         let refs = CrossReferences {
-            metaculus_prob: Some(0.65),
+            metaculus_prob: Some(dec!(0.65)),
             metaculus_forecasters: Some(100),
             manifold_prob: None,
-            forecastex_price: Some(0.70),
+            forecastex_price: Some(dec!(0.70)),
         };
         let json = serde_json::to_string(&refs).unwrap();
         let parsed: CrossReferences = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.metaculus_prob, Some(0.65));
+        assert_eq!(parsed.metaculus_prob, Some(dec!(0.65)));
         assert!(parsed.manifold_prob.is_none());
     }
 
@@ -989,11 +998,11 @@ mod tests {
     #[test]
     fn test_estimate_is_valid() {
         let e = Estimate {
-            probability: 0.50,
-            confidence: 0.8,
+            probability: dec!(0.50),
+            confidence: dec!(0.8),
             reasoning: "test".to_string(),
             tokens_used: 100,
-            cost: 0.01,
+            cost: dec!(0.01),
         };
         assert!(e.is_valid());
     }
@@ -1001,11 +1010,11 @@ mod tests {
     #[test]
     fn test_estimate_invalid_too_high() {
         let e = Estimate {
-            probability: 1.0,
-            confidence: 0.99,
+            probability: dec!(1.0),
+            confidence: dec!(0.99),
             reasoning: "overconfident".to_string(),
             tokens_used: 100,
-            cost: 0.01,
+            cost: dec!(0.01),
         };
         assert!(!e.is_valid());
     }
@@ -1013,11 +1022,11 @@ mod tests {
     #[test]
     fn test_estimate_invalid_too_low() {
         let e = Estimate {
-            probability: 0.0,
-            confidence: 0.99,
+            probability: Decimal::ZERO,
+            confidence: dec!(0.99),
             reasoning: "overconfident".to_string(),
             tokens_used: 100,
-            cost: 0.01,
+            cost: dec!(0.01),
         };
         assert!(!e.is_valid());
     }
@@ -1025,18 +1034,18 @@ mod tests {
     #[test]
     fn test_estimate_boundary_valid() {
         let low = Estimate {
-            probability: 0.01,
-            confidence: 0.5,
+            probability: dec!(0.01),
+            confidence: dec!(0.5),
             reasoning: "".to_string(),
             tokens_used: 0,
-            cost: 0.0,
+            cost: Decimal::ZERO,
         };
         let high = Estimate {
-            probability: 0.99,
-            confidence: 0.5,
+            probability: dec!(0.99),
+            confidence: dec!(0.5),
             reasoning: "".to_string(),
             tokens_used: 0,
-            cost: 0.0,
+            cost: Decimal::ZERO,
         };
         assert!(low.is_valid());
         assert!(high.is_valid());
@@ -1045,44 +1054,44 @@ mod tests {
     #[test]
     fn test_estimate_echo_detection() {
         let e = Estimate {
-            probability: 0.451,
-            confidence: 0.7,
+            probability: dec!(0.451),
+            confidence: dec!(0.7),
             reasoning: "".to_string(),
             tokens_used: 100,
-            cost: 0.01,
+            cost: dec!(0.01),
         };
         // Market price 0.45, tolerance 0.02 → within tolerance → echo
-        assert!(e.is_echo(0.45, 0.02));
+        assert!(e.is_echo(dec!(0.45), dec!(0.02)));
         // Market price 0.45, tolerance 0.0005 → outside → not echo
-        assert!(!e.is_echo(0.45, 0.0005));
+        assert!(!e.is_echo(dec!(0.45), dec!(0.0005)));
     }
 
     #[test]
     fn test_estimate_display() {
         let e = Estimate {
-            probability: 0.73,
-            confidence: 0.85,
+            probability: dec!(0.73),
+            confidence: dec!(0.85),
             reasoning: "strong signal".to_string(),
             tokens_used: 250,
-            cost: 0.005,
+            cost: dec!(0.005),
         };
         let display = format!("{e}");
-        assert!(display.contains("73.0%"));
-        assert!(display.contains("85%"));
+        assert!(display.contains("73"));
+        assert!(display.contains("85"));
     }
 
     #[test]
     fn test_estimate_serialization_roundtrip() {
         let e = Estimate {
-            probability: 0.62,
-            confidence: 0.90,
+            probability: dec!(0.62),
+            confidence: dec!(0.90),
             reasoning: "Based on BOM data".to_string(),
             tokens_used: 350,
-            cost: 0.008,
+            cost: dec!(0.008),
         };
         let json = serde_json::to_string(&e).unwrap();
         let parsed: Estimate = serde_json::from_str(&json).unwrap();
-        assert!((parsed.probability - 0.62).abs() < 1e-10);
+        assert_eq!(parsed.probability, dec!(0.62));
         assert_eq!(parsed.tokens_used, 350);
     }
 
@@ -1095,12 +1104,12 @@ mod tests {
             market_id: "MKT-001".to_string(),
             platform: "forecastex".to_string(),
             side: Side::Yes,
-            amount: 5.0,
-            fill_price: 0.45,
-            fees: 0.25,
+            amount: dec!(5),
+            fill_price: dec!(0.45),
+            fees: dec!(0.25),
             timestamp: Utc::now(),
         };
-        assert!((receipt.net_cost() - 5.25).abs() < 1e-10);
+        assert_eq!(receipt.net_cost(), dec!(5.25));
     }
 
     #[test]
@@ -1110,9 +1119,9 @@ mod tests {
             market_id: "MKT-001".to_string(),
             platform: "forecastex".to_string(),
             side: Side::Yes,
-            amount: 5.0,
-            fill_price: 0.45,
-            fees: 0.25,
+            amount: dec!(5),
+            fill_price: dec!(0.45),
+            fees: dec!(0.25),
             timestamp: Utc::now(),
         };
         let display = format!("{receipt}");
@@ -1127,9 +1136,9 @@ mod tests {
             market_id: "MKT-002".to_string(),
             platform: "manifold".to_string(),
             side: Side::No,
-            amount: 10.0,
-            fill_price: 0.60,
-            fees: 0.0,
+            amount: dec!(10),
+            fill_price: dec!(0.60),
+            fees: Decimal::ZERO,
             timestamp: Utc::now(),
         };
         let json = serde_json::to_string(&receipt).unwrap();
@@ -1146,12 +1155,12 @@ mod tests {
             market_id: "MKT-001".to_string(),
             platform: "forecastex".to_string(),
             side: Side::Yes,
-            size: 10.0,
-            entry_price: 0.40,
-            current_value: 5.0,
+            size: dec!(10),
+            entry_price: dec!(0.40),
+            current_value: dec!(5),
         };
         // PnL = 5.0 - (10.0 * 0.40) = 5.0 - 4.0 = 1.0
-        assert!((pos.unrealized_pnl() - 1.0).abs() < 1e-10);
+        assert_eq!(pos.unrealized_pnl(), dec!(1));
     }
 
     #[test]
@@ -1160,12 +1169,12 @@ mod tests {
             market_id: "MKT-001".to_string(),
             platform: "forecastex".to_string(),
             side: Side::No,
-            size: 10.0,
-            entry_price: 0.60,
-            current_value: 4.0,
+            size: dec!(10),
+            entry_price: dec!(0.60),
+            current_value: dec!(4),
         };
         // PnL = 4.0 - (10.0 * 0.60) = 4.0 - 6.0 = -2.0
-        assert!((pos.unrealized_pnl() - (-2.0)).abs() < 1e-10);
+        assert_eq!(pos.unrealized_pnl(), dec!(-2));
     }
 
     #[test]
@@ -1174,9 +1183,9 @@ mod tests {
             market_id: "MKT-001".to_string(),
             platform: "forecastex".to_string(),
             side: Side::Yes,
-            size: 10.0,
-            entry_price: 0.40,
-            current_value: 5.0,
+            size: dec!(10),
+            entry_price: dec!(0.40),
+            current_value: dec!(5),
         };
         let display = format!("{pos}");
         assert!(display.contains("YES"));
@@ -1189,9 +1198,9 @@ mod tests {
             market_id: "MKT-001".to_string(),
             platform: "forecastex".to_string(),
             side: Side::Yes,
-            size: 10.0,
-            entry_price: 0.40,
-            current_value: 5.0,
+            size: dec!(10),
+            entry_price: dec!(0.40),
+            current_value: dec!(5),
         };
         let json = serde_json::to_string(&pos).unwrap();
         let parsed: Position = serde_json::from_str(&json).unwrap();
@@ -1204,31 +1213,31 @@ mod tests {
     #[test]
     fn test_liquidity_total_depth() {
         let liq = LiquidityInfo {
-            bid_depth: 5000.0,
-            ask_depth: 3000.0,
-            volume_24h: 20000.0,
+            bid_depth: dec!(5000),
+            ask_depth: dec!(3000),
+            volume_24h: dec!(20000),
         };
-        assert!((liq.total_depth() - 8000.0).abs() < 1e-10);
+        assert_eq!(liq.total_depth(), dec!(8000));
     }
 
     #[test]
     fn test_liquidity_is_sufficient() {
         let liq = LiquidityInfo {
-            bid_depth: 5000.0,
-            ask_depth: 3000.0,
-            volume_24h: 20000.0,
+            bid_depth: dec!(5000),
+            ask_depth: dec!(3000),
+            volume_24h: dec!(20000),
         };
-        assert!(liq.is_sufficient(8000.0));
-        assert!(liq.is_sufficient(7999.0));
-        assert!(!liq.is_sufficient(8001.0));
+        assert!(liq.is_sufficient(dec!(8000)));
+        assert!(liq.is_sufficient(dec!(7999)));
+        assert!(!liq.is_sufficient(dec!(8001)));
     }
 
     #[test]
     fn test_liquidity_display() {
         let liq = LiquidityInfo {
-            bid_depth: 5000.0,
-            ask_depth: 3000.0,
-            volume_24h: 20000.0,
+            bid_depth: dec!(5000),
+            ask_depth: dec!(3000),
+            volume_24h: dec!(20000),
         };
         let display = format!("{liq}");
         assert!(display.contains("5000"));
@@ -1238,13 +1247,13 @@ mod tests {
     #[test]
     fn test_liquidity_serialization_roundtrip() {
         let liq = LiquidityInfo {
-            bid_depth: 1234.56,
-            ask_depth: 789.01,
-            volume_24h: 50000.0,
+            bid_depth: dec!(1234.56),
+            ask_depth: dec!(789.01),
+            volume_24h: dec!(50000),
         };
         let json = serde_json::to_string(&liq).unwrap();
         let parsed: LiquidityInfo = serde_json::from_str(&json).unwrap();
-        assert!((parsed.bid_depth - 1234.56).abs() < 1e-10);
+        assert_eq!(parsed.bid_depth, dec!(1234.56));
     }
 
     // -- BetDecision tests --
@@ -1254,15 +1263,15 @@ mod tests {
         let decision = BetDecision {
             market: Market::sample(),
             side: Side::Yes,
-            fair_value: 0.55,
-            edge: 0.10,
-            kelly_fraction: 0.05,
-            bet_amount: 5.0,
-            confidence: 0.80,
+            fair_value: dec!(0.55),
+            edge: dec!(0.10),
+            kelly_fraction: dec!(0.05),
+            bet_amount: dec!(5),
+            confidence: dec!(0.80),
             rationale: "Strong CPI signal".to_string(),
             data_sources_used: vec!["fred".to_string(), "metaculus".to_string()],
         };
-        assert!((decision.expected_value() - 0.50).abs() < 1e-10);
+        assert_eq!(decision.expected_value(), dec!(0.50));
     }
 
     #[test]
@@ -1270,21 +1279,21 @@ mod tests {
         let decision = BetDecision {
             market: Market::sample(), // yes=0.45, no=0.55
             side: Side::Yes,
-            fair_value: 0.55,
-            edge: 0.10,
-            kelly_fraction: 0.05,
-            bet_amount: 5.0,
-            confidence: 0.80,
+            fair_value: dec!(0.55),
+            edge: dec!(0.10),
+            kelly_fraction: dec!(0.05),
+            bet_amount: dec!(5),
+            confidence: dec!(0.80),
             rationale: "test".to_string(),
             data_sources_used: vec![],
         };
-        assert!((decision.market_price() - 0.45).abs() < 1e-10);
+        assert_eq!(decision.market_price(), dec!(0.45));
 
         let no_decision = BetDecision {
             side: Side::No,
             ..decision
         };
-        assert!((no_decision.market_price() - 0.55).abs() < 1e-10);
+        assert_eq!(no_decision.market_price(), dec!(0.55));
     }
 
     #[test]
@@ -1292,17 +1301,17 @@ mod tests {
         let decision = BetDecision {
             market: Market::sample(),
             side: Side::Yes,
-            fair_value: 0.55,
-            edge: 0.10,
-            kelly_fraction: 0.05,
-            bet_amount: 5.0,
-            confidence: 0.80,
+            fair_value: dec!(0.55),
+            edge: dec!(0.10),
+            kelly_fraction: dec!(0.05),
+            bet_amount: dec!(5),
+            confidence: dec!(0.80),
             rationale: "test".to_string(),
             data_sources_used: vec![],
         };
         let display = format!("{decision}");
         assert!(display.contains("YES"));
-        assert!(display.contains("55%")); // fair value
+        assert!(display.contains("55")); // fair value
     }
 
     #[test]
@@ -1310,18 +1319,18 @@ mod tests {
         let decision = BetDecision {
             market: Market::sample(),
             side: Side::Yes,
-            fair_value: 0.55,
-            edge: 0.10,
-            kelly_fraction: 0.05,
-            bet_amount: 5.0,
-            confidence: 0.80,
+            fair_value: dec!(0.55),
+            edge: dec!(0.10),
+            kelly_fraction: dec!(0.05),
+            bet_amount: dec!(5),
+            confidence: dec!(0.80),
             rationale: "Based on FRED data".to_string(),
             data_sources_used: vec!["fred".to_string()],
         };
         let json = serde_json::to_string(&decision).unwrap();
         let parsed: BetDecision = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.side, Side::Yes);
-        assert!((parsed.fair_value - 0.55).abs() < 1e-10);
+        assert_eq!(parsed.fair_value, dec!(0.55));
     }
 
     // -- DataContext tests --
@@ -1330,7 +1339,7 @@ mod tests {
     fn test_data_context_empty() {
         let ctx = DataContext::empty(MarketCategory::Weather);
         assert_eq!(ctx.category, MarketCategory::Weather);
-        assert_eq!(ctx.cost, 0.0);
+        assert_eq!(ctx.cost, Decimal::ZERO);
         assert!(ctx.metaculus_forecast.is_none());
     }
 
@@ -1351,8 +1360,8 @@ mod tests {
             summary: "CPI at 3.2%".to_string(),
             freshness: Utc::now(),
             source: "fred".to_string(),
-            cost: 0.001,
-            metaculus_forecast: Some(0.55),
+            cost: dec!(0.001),
+            metaculus_forecast: Some(dec!(0.55)),
             metaculus_forecasters: Some(200),
             manifold_price: None,
         };
@@ -1369,15 +1378,15 @@ mod tests {
             summary: "Warm and windy".to_string(),
             freshness: Utc::now(),
             source: "bom".to_string(),
-            cost: 0.0,
+            cost: Decimal::ZERO,
             metaculus_forecast: None,
             metaculus_forecasters: None,
-            manifold_price: Some(0.60),
+            manifold_price: Some(dec!(0.60)),
         };
         let json = serde_json::to_string(&ctx).unwrap();
         let parsed: DataContext = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.category, MarketCategory::Weather);
-        assert_eq!(parsed.manifold_price, Some(0.60));
+        assert_eq!(parsed.manifold_price, Some(dec!(0.60)));
     }
 
     // -- CycleReport tests --
@@ -1390,9 +1399,9 @@ mod tests {
             markets_scanned: 150,
             edges_found: 5,
             bets_placed: 2,
-            cycle_cost: 0.15,
-            cycle_pnl: 3.50,
-            bankroll_after: 103.50,
+            cycle_cost: dec!(0.15),
+            cycle_pnl: dec!(3.50),
+            bankroll_after: dec!(103.50),
         };
         let display = format!("{report}");
         assert!(display.contains("#42"));
@@ -1407,14 +1416,14 @@ mod tests {
             markets_scanned: 50,
             edges_found: 3,
             bets_placed: 1,
-            cycle_cost: 0.12,
-            cycle_pnl: -0.12,
-            bankroll_after: 99.88,
+            cycle_cost: dec!(0.12),
+            cycle_pnl: dec!(-0.12),
+            bankroll_after: dec!(99.88),
         };
         let json = serde_json::to_string(&report).unwrap();
         let parsed: CycleReport = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.cycle_number, 1);
-        assert!((parsed.bankroll_after - 99.88).abs() < 1e-10);
+        assert_eq!(parsed.bankroll_after, dec!(99.88));
     }
 
     // -- OracleError tests --
@@ -1428,8 +1437,8 @@ mod tests {
         assert_eq!(format!("{e}"), "Platform error (forecastex): connection timeout");
 
         let e = OracleError::InsufficientBalance {
-            needed: 10.0,
-            available: 5.0,
+            needed: dec!(10),
+            available: dec!(5),
         };
         assert!(format!("{e}").contains("10.00"));
         assert!(format!("{e}").contains("5.00"));
