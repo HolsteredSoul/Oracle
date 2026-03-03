@@ -15,6 +15,7 @@ use oracle::engine::enricher::Enricher;
 use oracle::engine::executor::Executor;
 use oracle::engine::scanner::MarketRouter;
 use oracle::llm::anthropic::AnthropicClient;
+use oracle::llm::openai::OpenAiClient;
 use oracle::llm::openrouter::OpenRouterClient;
 use oracle::llm::LlmEstimator;
 use oracle::platforms::betfair::BetfairClient;
@@ -82,7 +83,9 @@ async fn main() -> Result<()> {
 
     // Platform clients
     let manifold = if cfg.platforms.manifold.enabled {
-        Some(ManifoldClient::new(None)?)
+        let api_key = cfg.platforms.manifold.api_key_env.as_deref()
+            .and_then(|env| std::env::var(env).ok());
+        Some(ManifoldClient::new(api_key)?)
     } else {
         None
     };
@@ -118,7 +121,8 @@ async fn main() -> Result<()> {
     // Data enricher
     let fred_key = cfg.data_sources.fred_api_key_env.as_deref()
         .and_then(|env| std::env::var(env).ok());
-    let news_key = std::env::var("NEWS_API_KEY").ok();
+    let news_key = cfg.data_sources.news_api_key_env.as_deref()
+        .and_then(|env| std::env::var(env).ok());
     let sports_key = cfg.data_sources.api_sports_key_env.as_deref()
         .and_then(|env| std::env::var(env).ok());
     let mut enricher = Enricher::new(fred_key, news_key, sports_key)?;
@@ -152,14 +156,20 @@ async fn main() -> Result<()> {
                     Some(cfg.llm.max_tokens),
                 )?)
             }
-            other => {
-                warn!(provider = other, "Unknown LLM provider, defaulting to OpenRouter");
-                Box::new(OpenRouterClient::new(
+            "openai" => {
+                info!(model = %cfg.llm.model, "Using OpenAI LLM provider");
+                Box::new(OpenAiClient::new(
                     llm_api_key,
                     Some(cfg.llm.model.clone()),
-                    cfg.llm.fallback_model.clone(),
                     Some(cfg.llm.max_tokens),
                 )?)
+            }
+            other => {
+                anyhow::bail!(
+                    "Unknown LLM provider '{}' in config.toml. \
+                     Valid values are: openrouter, anthropic, openai",
+                    other
+                );
             }
         }
     };
