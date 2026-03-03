@@ -106,7 +106,9 @@ async fn main() -> Result<()> {
     };
 
     let metaculus = if cfg.platforms.metaculus.enabled {
-        Some(MetaculusClient::new()?)
+        let api_key = cfg.platforms.metaculus.api_key_env.as_deref()
+            .and_then(|env| std::env::var(env).ok());
+        Some(MetaculusClient::new(api_key)?)
     } else {
         None
     };

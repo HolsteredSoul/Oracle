@@ -22,6 +22,7 @@ account_id_env = "IB_ACCOUNT_ID"
 
 [platforms.metaculus]
 enabled = true                 # Read-only cross-reference
+api_key_env = "METACULUS_API_TOKEN"  # Required — get from metaculus.com/accounts/profile/api-token/
 
 [platforms.manifold]
 enabled = true                 # Play-money validation + sentiment signal
