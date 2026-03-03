@@ -6,8 +6,13 @@
 
 use anyhow::Result;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
+
+use oracle::dashboard::routes::{AppState, BalancePoint, CycleLogEntry, DashboardState};
+use oracle::dashboard::spawn_dashboard;
 
 use oracle::config;
 use oracle::engine::accountant::{Accountant, CycleCosts, CycleReport};
@@ -78,6 +83,16 @@ async fn main() -> Result<()> {
             s
         }
     };
+
+    // -- Dashboard -------------------------------------------------------
+
+    // Shared state for the web dashboard (Arc so both the server and the
+    // main loop can hold a reference).
+    let dashboard_state: AppState = Arc::new(DashboardState::new(state.clone()));
+
+    if cfg.dashboard.enabled {
+        spawn_dashboard(Arc::clone(&dashboard_state), cfg.dashboard.port)?;
+    }
 
     // -- Initialise components -------------------------------------------
 
@@ -233,6 +248,7 @@ async fn main() -> Result<()> {
                 ).await {
                     Ok(report) => {
                         log_cycle_report(&report);
+                        update_dashboard(&dashboard_state, &state, &report).await;
                         // Persist state after each cycle
                         if let Err(e) = storage::save_state(&state, None) {
                             error!(error = %e, "Failed to save state");
@@ -352,6 +368,31 @@ fn log_cycle_report(report: &CycleReport) {
         status = ?report.status,
         "Cycle complete"
     );
+}
+
+/// Push cycle results into the shared dashboard state.
+async fn update_dashboard(dash: &AppState, state: &AgentState, report: &CycleReport) {
+    // Mirror the latest agent state snapshot
+    *dash.agent.write().await = state.clone();
+
+    // Append cycle log entry
+    dash.cycle_log.write().await.push(CycleLogEntry {
+        cycle_number: report.cycle_number,
+        timestamp: report.timestamp.to_rfc3339(),
+        markets_scanned: report.markets_scanned,
+        edges_found: report.edges_found,
+        bets_placed: report.bets_placed,
+        bets_failed: report.bets_failed,
+        cycle_cost: report.cycle_costs.total().to_f64().unwrap_or(0.0),
+        bankroll_after: report.bankroll_after.to_f64().unwrap_or(0.0),
+        status: format!("{}", report.status),
+    });
+
+    // Append balance history point
+    dash.balance_history.write().await.push(BalancePoint {
+        timestamp: report.timestamp.to_rfc3339(),
+        bankroll: report.bankroll_after.to_f64().unwrap_or(0.0),
+    });
 }
 
 /// Initialise the `tracing` subscriber.
