@@ -142,6 +142,7 @@ async fn main() -> Result<()> {
                     Some(cfg.llm.model.clone()),
                     cfg.llm.fallback_model.clone(),
                     Some(cfg.llm.max_tokens),
+                    Some(cfg.llm.batch_size),
                 )?)
             }
             "anthropic" => {
@@ -159,6 +160,7 @@ async fn main() -> Result<()> {
                     Some(cfg.llm.model.clone()),
                     cfg.llm.fallback_model.clone(),
                     Some(cfg.llm.max_tokens),
+                    Some(cfg.llm.batch_size),
                 )?)
             }
         }

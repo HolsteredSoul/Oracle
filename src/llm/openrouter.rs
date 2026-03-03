@@ -4,8 +4,8 @@
 //! multiple model providers with a single API key. Uses the OpenAI-compatible
 //! chat completions format.
 //!
-//! Primary model: Claude 4 Sonnet (best probabilistic reasoning & calibration).
-//! Fallback model: Grok-4.1-fast (cheap & fast, used when primary fails).
+//! Primary model: Grok 4.1 Fast (cheap, 2M ctx, native web + X search).
+//! Fallback model: Claude Sonnet 4.6 (best reasoning for hard markets).
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
@@ -26,11 +26,13 @@ use crate::types::{d, DataContext, Estimate, Market};
 
 const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
 
-/// Default primary model: Claude 4 Sonnet via OpenRouter.
-const DEFAULT_PRIMARY_MODEL: &str = "anthropic/claude-sonnet-4";
+/// Default primary model: Grok 4.1 Fast via OpenRouter.
+/// Cheap ($0.20/$0.50 per 1M tokens), 2M token context, native web + X/Twitter search.
+const DEFAULT_PRIMARY_MODEL: &str = "x-ai/grok-4.1-fast";
 
-/// Default fallback model: Grok-4.1-fast via OpenRouter (cheap/fast).
-const DEFAULT_FALLBACK_MODEL: &str = "x-ai/grok-4.1-fast";
+/// Default fallback model: Claude Sonnet 4.6 via OpenRouter.
+/// Best-in-class reasoning for markets where Grok gives low confidence or fails.
+const DEFAULT_FALLBACK_MODEL: &str = "anthropic/claude-sonnet-4-6";
 
 const DEFAULT_MAX_TOKENS: u32 = 1024;
 
@@ -45,19 +47,32 @@ const BASE_BACKOFF_MS: u64 = 1000;
 // ---------------------------------------------------------------------------
 
 /// Returns (input_cost_per_1k, output_cost_per_1k) for known models.
-/// Kept as f64 internally for per-token cost calculation.
+/// Prices are per-1K tokens (1M token price ÷ 1000).
+/// Sources: OpenRouter pricing, March 2026.
 fn model_costs(model: &str) -> (f64, f64) {
     match model {
-        // Claude 4 Sonnet
-        m if m.contains("claude") && m.contains("sonnet") => (0.003, 0.015),
-        // Claude 4 Opus
-        m if m.contains("claude") && m.contains("opus") => (0.015, 0.075),
-        // Claude 4 Haiku
-        m if m.contains("claude") && m.contains("haiku") => (0.0008, 0.004),
-        // Grok models
+        // Grok 4 / 4.1 fast tier  — $0.20/$0.50 per 1M = $0.0002/$0.0005 per 1K
+        m if m.contains("grok") && m.contains("fast") => (0.0002, 0.0005),
+        // Grok 3 mini             — $0.30/$0.50 per 1M = $0.0003/$0.0005 per 1K
+        m if m.contains("grok") && m.contains("mini") => (0.0003, 0.0005),
+        // Grok 3 full             — $3.00/$15.00 per 1M = $0.003/$0.015 per 1K
         m if m.contains("grok") => (0.003, 0.015),
+        // Claude Sonnet (any version)
+        m if m.contains("claude") && m.contains("sonnet") => (0.003, 0.015),
+        // Claude Opus
+        m if m.contains("claude") && m.contains("opus") => (0.015, 0.075),
+        // Claude Haiku
+        m if m.contains("claude") && m.contains("haiku") => (0.0008, 0.004),
         // GPT-4o
         m if m.contains("gpt-4o") => (0.005, 0.015),
+        // Perplexity Sonar Pro    — $3.00/$15.00 per 1M = $0.003/$0.015 per 1K
+        m if m.contains("sonar") && m.contains("pro") => (0.003, 0.015),
+        // Perplexity Sonar base   — $1.00/$1.00 per 1M = $0.001/$0.001 per 1K
+        m if m.contains("sonar") => (0.001, 0.001),
+        // Gemini 2.5 Pro          — $1.25/$10.00 per 1M = $0.00125/$0.010 per 1K
+        m if m.contains("gemini") && m.contains("pro") => (0.00125, 0.010),
+        // Gemini 2.5 Flash        — $0.30/$1.50 per 1M = $0.0003/$0.0015 per 1K
+        m if m.contains("gemini") && m.contains("flash") => (0.0003, 0.0015),
         // Conservative default
         _ => (0.005, 0.015),
     }
@@ -116,6 +131,7 @@ pub struct OpenRouterClient {
     primary_model: String,
     fallback_model: Option<String>,
     max_tokens: u32,
+    batch_size: u32,
     total_cost: std::sync::atomic::AtomicU64, // stored as cost * 1_000_000
     total_calls: std::sync::atomic::AtomicU64,
 }
@@ -124,14 +140,16 @@ impl OpenRouterClient {
     /// Create a new OpenRouter client.
     ///
     /// - `api_key`: OpenRouter API key.
-    /// - `primary_model`: Primary model ID (e.g. "anthropic/claude-sonnet-4").
+    /// - `primary_model`: Primary model ID (e.g. "x-ai/grok-4.1-fast").
     /// - `fallback_model`: Optional fallback model for when primary fails.
     /// - `max_tokens`: Max output tokens per request.
+    /// - `batch_size`: Max number of markets per batch LLM call (default: 5).
     pub fn new(
         api_key: String,
         primary_model: Option<String>,
         fallback_model: Option<String>,
         max_tokens: Option<u32>,
+        batch_size: Option<u32>,
     ) -> Result<Self> {
         let http = Client::builder()
             .timeout(std::time::Duration::from_secs(120))
@@ -146,6 +164,7 @@ impl OpenRouterClient {
                 fallback_model.unwrap_or_else(|| DEFAULT_FALLBACK_MODEL.to_string()),
             ),
             max_tokens: max_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
+            batch_size: batch_size.unwrap_or(5),
             total_cost: std::sync::atomic::AtomicU64::new(0),
             total_calls: std::sync::atomic::AtomicU64::new(0),
         })
@@ -379,7 +398,7 @@ impl LlmEstimator for OpenRouterClient {
             return Ok(Vec::new());
         }
 
-        // For small batches, individual calls are simpler
+        // For very small batches, individual calls are simpler
         if markets.len() <= 2 {
             let mut results = Vec::with_capacity(markets.len());
             for (market, context) in markets {
@@ -388,66 +407,84 @@ impl LlmEstimator for OpenRouterClient {
             return Ok(results);
         }
 
-        info!(count = markets.len(), "Starting batch estimation via OpenRouter");
+        let batch_size = self.batch_size as usize;
+        info!(
+            count = markets.len(),
+            batch_size,
+            "Starting batch estimation via OpenRouter"
+        );
 
-        let system = AnthropicClient::system_prompt();
-        let user_msg = AnthropicClient::build_batch_prompt(markets);
+        let mut all_results: Vec<Estimate> = Vec::with_capacity(markets.len());
+        let mut total_fallbacks = 0u32;
 
-        let (response_text, tokens, cost) = self
-            .call_api(system, &user_msg)
-            .await
-            .context("Batch estimation API call failed")?;
+        for chunk in markets.chunks(batch_size) {
+            let system = AnthropicClient::system_prompt();
+            let user_msg = AnthropicClient::build_batch_prompt(chunk);
 
-        let expected_ids: Vec<&str> = markets.iter().map(|(m, _)| m.id.as_str()).collect();
-        let parsed = AnthropicClient::parse_batch_response(&response_text, &expected_ids);
+            let (response_text, tokens, cost) = self
+                .call_api(system, &user_msg)
+                .await
+                .context("Batch estimation API call failed")?;
 
-        let cost_per_market = cost / markets.len() as f64;
-        let tokens_per_market = tokens / markets.len() as u32;
+            let expected_ids: Vec<&str> = chunk.iter().map(|(m, _)| m.id.as_str()).collect();
+            let parsed = AnthropicClient::parse_batch_response(&response_text, &expected_ids);
 
-        let mut results = Vec::with_capacity(markets.len());
-        let mut fallback_count = 0u32;
+            let cost_per_market = cost / chunk.len() as f64;
+            let tokens_per_market = tokens / chunk.len() as u32;
 
-        for (i, (market, context)) in markets.iter().enumerate() {
-            match parsed.get(i).and_then(|p| p.as_ref()) {
-                Some((prob, conf)) => {
-                    results.push(Estimate {
-                        probability: d(*prob),
-                        confidence: d(*conf),
-                        reasoning: format!("(batch estimate for {})", market.id),
-                        tokens_used: tokens_per_market,
-                        cost: d(cost_per_market),
-                    });
-                }
-                None => {
-                    debug!(
-                        market_id = %market.id,
-                        "Batch parse failed, falling back to individual call"
-                    );
-                    fallback_count += 1;
-                    match self.estimate_probability(market, context).await {
-                        Ok(est) => results.push(est),
-                        Err(e) => {
-                            warn!(
-                                market_id = %market.id,
-                                error = %e,
-                                "Individual fallback also failed"
-                            );
-                            results.push(Estimate {
-                                probability: market.current_price_yes,
-                                confidence: dec!(0.1),
-                                reasoning: format!("Estimation failed: {e}"),
-                                tokens_used: 0,
-                                cost: Decimal::ZERO,
-                            });
+            let mut chunk_fallbacks = 0u32;
+
+            for (i, (market, context)) in chunk.iter().enumerate() {
+                match parsed.get(i).and_then(|p| p.as_ref()) {
+                    Some((prob, conf)) => {
+                        all_results.push(Estimate {
+                            probability: d(*prob),
+                            confidence: d(*conf),
+                            reasoning: format!("(batch estimate for {})", market.id),
+                            tokens_used: tokens_per_market,
+                            cost: d(cost_per_market),
+                        });
+                    }
+                    None => {
+                        debug!(
+                            market_id = %market.id,
+                            "Batch parse failed, falling back to individual call"
+                        );
+                        chunk_fallbacks += 1;
+                        total_fallbacks += 1;
+                        match self.estimate_probability(market, context).await {
+                            Ok(est) => all_results.push(est),
+                            Err(e) => {
+                                warn!(
+                                    market_id = %market.id,
+                                    error = %e,
+                                    "Individual fallback also failed"
+                                );
+                                all_results.push(Estimate {
+                                    probability: market.current_price_yes,
+                                    confidence: dec!(0.1),
+                                    reasoning: format!("Estimation failed: {e}"),
+                                    tokens_used: 0,
+                                    cost: Decimal::ZERO,
+                                });
+                            }
                         }
                     }
                 }
             }
+
+            if chunk_fallbacks > 0 {
+                info!(
+                    chunk_fallbacks,
+                    chunk_size = chunk.len(),
+                    "Chunk completed with fallbacks (OpenRouter)"
+                );
+            }
         }
 
-        if fallback_count > 0 {
+        if total_fallbacks > 0 {
             info!(
-                fallback_count,
+                total_fallbacks,
                 total = markets.len(),
                 "Batch estimation complete with fallbacks (OpenRouter)"
             );
@@ -455,7 +492,7 @@ impl LlmEstimator for OpenRouterClient {
             info!(total = markets.len(), "Batch estimation complete (OpenRouter)");
         }
 
-        Ok(results)
+        Ok(all_results)
     }
 
     fn cost_per_call(&self) -> Decimal {
@@ -479,13 +516,14 @@ mod tests {
 
     #[test]
     fn test_client_construction_defaults() {
-        let client = OpenRouterClient::new("test-key".into(), None, None, None).unwrap();
+        let client = OpenRouterClient::new("test-key".into(), None, None, None, None).unwrap();
         assert_eq!(client.model_name(), DEFAULT_PRIMARY_MODEL);
         assert_eq!(
             client.fallback_model.as_deref(),
             Some(DEFAULT_FALLBACK_MODEL)
         );
         assert_eq!(client.max_tokens, DEFAULT_MAX_TOKENS);
+        assert_eq!(client.batch_size, 5);
         assert_eq!(client.cumulative_cost(), 0.0);
         assert_eq!(client.total_calls(), 0);
     }
@@ -497,16 +535,18 @@ mod tests {
             Some("anthropic/claude-opus-4".into()),
             Some("openai/gpt-4o".into()),
             Some(2048),
+            Some(10),
         )
         .unwrap();
         assert_eq!(client.model_name(), "anthropic/claude-opus-4");
         assert_eq!(client.fallback_model.as_deref(), Some("openai/gpt-4o"));
         assert_eq!(client.max_tokens, 2048);
+        assert_eq!(client.batch_size, 10);
     }
 
     #[test]
     fn test_cost_per_call_positive() {
-        let client = OpenRouterClient::new("key".into(), None, None, None).unwrap();
+        let client = OpenRouterClient::new("key".into(), None, None, None, None).unwrap();
         assert!(client.cost_per_call() > Decimal::ZERO);
     }
 
@@ -518,8 +558,17 @@ mod tests {
     }
 
     #[test]
-    fn test_model_costs_grok() {
+    fn test_model_costs_grok_fast() {
+        // Grok 4.1 fast tier: $0.20/$0.50 per 1M = $0.0002/$0.0005 per 1K
         let (input, output) = model_costs("x-ai/grok-4.1-fast");
+        assert!((input - 0.0002).abs() < 1e-10);
+        assert!((output - 0.0005).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_model_costs_grok_full() {
+        // Grok 3 full: $3.00/$15.00 per 1M = $0.003/$0.015 per 1K
+        let (input, output) = model_costs("x-ai/grok-3");
         assert!((input - 0.003).abs() < 1e-10);
         assert!((output - 0.015).abs() < 1e-10);
     }

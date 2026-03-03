@@ -22,7 +22,7 @@ use crate::types::{d, DataContext, Estimate, Market};
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
-const DEFAULT_MODEL: &str = "claude-sonnet-4-20250514";
+const DEFAULT_MODEL: &str = "claude-sonnet-4-6-20250514";
 const DEFAULT_MAX_TOKENS: u32 = 1024;
 
 /// Maximum retries on rate limit / server errors.

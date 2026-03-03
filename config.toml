@@ -7,11 +7,11 @@ currency = "AUD"
 
 [llm]
 provider = "openrouter"        # "openrouter" | "anthropic" | "openai"
-model = "anthropic/claude-sonnet-4"
-fallback_model = "x-ai/grok-4.1-fast"
+model = "x-ai/grok-4.1-fast"              # cheaper ($0.20/$0.50 per 1M), 2M ctx, web + X search
+fallback_model = "anthropic/claude-sonnet-4-6"  # best reasoning for hard markets
 api_key_env = "OPENROUTER_API_KEY"
-max_tokens = 1024
-batch_size = 10                # Markets per LLM call
+max_tokens = 2048              # headroom for 5-market batch responses (was 1024)
+batch_size = 5                 # markets per LLM call — smaller = reliable parse (was 10)
 
 [platforms.forecastex]
 enabled = true
