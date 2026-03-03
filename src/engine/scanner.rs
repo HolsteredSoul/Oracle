@@ -723,7 +723,7 @@ mod tests {
     #[test]
     fn test_router_new_with_platforms() {
         let manifold = ManifoldClient::new(None).unwrap();
-        let metaculus = MetaculusClient::new().unwrap();
+        let metaculus = MetaculusClient::new(None).unwrap();
         let router = MarketRouter::new(Some(manifold), Some(metaculus));
         assert!(router.manifold.is_some());
         assert!(router.metaculus.is_some());
