@@ -25,6 +25,7 @@ enabled = true                 # Read-only cross-reference
 
 [platforms.manifold]
 enabled = true                 # Play-money validation + sentiment signal
+api_key_env = "MANIFOLD_API_KEY"  # Optional — only needed for paper-trading writes
 
 [platforms.betfair]
 enabled = false                # Betfair Exchange — real-money execution
@@ -50,6 +51,7 @@ openweathermap_key_env = "OWM_API_KEY"
 bom_enabled = true
 api_sports_key_env = "API_SPORTS_KEY"
 fred_api_key_env = "FRED_API_KEY"
+news_api_key_env = "NEWS_API_KEY"
 coingecko = { enabled = true }
 
 [dashboard]

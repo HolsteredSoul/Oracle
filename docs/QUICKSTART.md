@@ -141,7 +141,7 @@ The default `config.toml` ships with sensible defaults for trial mode. Key setti
 |---------|---------|---------|
 | `agent.scan_interval_secs` | `600` | Scan every 10 minutes |
 | `agent.initial_bankroll` | `100.0` | Starting simulated bankroll |
-| `llm.provider` | `"openrouter"` | LLM provider (`"openrouter"` or `"anthropic"`) |
+| `llm.provider` | `"openrouter"` | LLM provider (`"openrouter"`, `"anthropic"`, or `"openai"`) |
 | `llm.model` | `"anthropic/claude-sonnet-4"` | Primary model for estimates |
 | `llm.fallback_model` | `"x-ai/grok-4.1-fast"` | Fallback when primary fails |
 | `risk.kelly_multiplier` | `0.25` | Quarter-Kelly (conservative) |

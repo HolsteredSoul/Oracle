@@ -1,12 +1,11 @@
 //! LLM integration for fair-value probability estimation.
 //!
 //! Defines the `LlmEstimator` trait and provides implementations for
-//! Claude (Anthropic), GPT-4 (OpenAI), and Grok.
+//! Claude (Anthropic), GPT-4 (OpenAI), and OpenRouter (multi-provider).
 
 pub mod anthropic;
 pub mod openai;
 pub mod openrouter;
-pub mod grok;
 
 use anyhow::Result;
 use async_trait::async_trait;

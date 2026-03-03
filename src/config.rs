@@ -69,6 +69,10 @@ pub struct MetaculusConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ManifoldConfig {
     pub enabled: bool,
+    /// Env var name for the Manifold API key (default: "MANIFOLD_API_KEY").
+    /// Only needed to place play-money bets; market scanning is public.
+    #[serde(default)]
+    pub api_key_env: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -124,6 +128,8 @@ pub struct DataSourcesConfig {
     pub bom_enabled: Option<bool>,
     pub api_sports_key_env: Option<String>,
     pub fred_api_key_env: Option<String>,
+    /// Env var name for the NewsAPI key (default: "NEWS_API_KEY").
+    pub news_api_key_env: Option<String>,
     pub coingecko: Option<CoinGeckoConfig>,
 }
 
