@@ -64,6 +64,10 @@ pub struct ForecastExConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct MetaculusConfig {
     pub enabled: bool,
+    /// Env var name for the Metaculus API token (e.g. "METACULUS_API_TOKEN").
+    /// Required — Metaculus API requires authentication for all requests.
+    #[serde(default)]
+    pub api_key_env: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

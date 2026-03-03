@@ -5,7 +5,7 @@
 //! Bayesian anchor and calibration signal.
 //!
 //! API: `https://www.metaculus.com/api2/questions/`
-//! Auth: Not required for reading.
+//! Auth: API token required (`Authorization: Token <token>`). Set via METACULUS_API_TOKEN env var.
 //! Pagination: Offset-based (`?limit=N&offset=M`), max 100 per page.
 //! Timestamps: ISO 8601 strings (e.g. "2026-02-09T18:45:09.861028Z").
 
@@ -161,18 +161,23 @@ struct MetaculusCategory {
 /// Metaculus read-only platform client.
 pub struct MetaculusClient {
     http: Client,
+    api_key: Option<String>,
 }
 
 impl MetaculusClient {
-    /// Create a new Metaculus client. No auth required.
-    pub fn new() -> Result<Self> {
+    /// Create a new Metaculus client.
+    ///
+    /// `api_key` should be a Metaculus API token (obtain from
+    /// metaculus.com/accounts/profile/api-token/). The API now requires
+    /// authentication for all requests.
+    pub fn new(api_key: Option<String>) -> Result<Self> {
         let http = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .user_agent("ORACLE/0.1.0 (prediction-market-agent)")
             .build()
             .context("Failed to build HTTP client for Metaculus")?;
 
-        Ok(Self { http })
+        Ok(Self { http, api_key })
     }
 
     // -- Internal helpers ------------------------------------------------
@@ -187,9 +192,11 @@ impl MetaculusClient {
 
         debug!(url = %url, "Fetching Metaculus page");
 
-        let resp = self
-            .http
-            .get(&url)
+        let mut req = self.http.get(&url);
+        if let Some(token) = &self.api_key {
+            req = req.header("Authorization", format!("Token {token}"));
+        }
+        let resp = req
             .send()
             .await
             .context("Metaculus API request failed")?;
@@ -780,7 +787,7 @@ mod tests {
 
     #[test]
     fn test_new_client() {
-        let client = MetaculusClient::new();
+        let client = MetaculusClient::new(None);
         assert!(client.is_ok());
         let client = client.unwrap();
         assert!(!client.is_executable());
