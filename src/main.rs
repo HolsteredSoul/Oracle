@@ -219,14 +219,34 @@ async fn main() -> Result<()> {
         }),
     );
 
-    // Executor — create a separate Betfair client for execution if enabled
-    let executor_betfair = if cfg.platforms.betfair.enabled {
-        BetfairClient::new().ok()
-    } else {
-        None
-    };
-    let dry_run = executor_betfair.is_none(); // dry-run if no real-money venue
-    let executor = Executor::with_betfair(None, executor_betfair, dry_run);
+    // Executor — create platform clients based on trading_mode
+    let mana_bankroll = cfg.platforms.manifold.mana_bankroll;
+    let (executor_manifold, executor_betfair, dry_run) =
+        match cfg.agent.trading_mode.as_str() {
+            "paper" => {
+                info!("Trading mode: PAPER (Manifold play-money)");
+                let api_key = cfg.platforms.manifold.api_key_env.as_deref()
+                    .and_then(|env| std::env::var(env).ok());
+                let client = ManifoldClient::new(api_key).ok();
+                if client.is_none() {
+                    warn!("Manifold client unavailable — MANIFOLD_API_KEY may be missing");
+                }
+                (client, None, false)
+            }
+            "live" => {
+                info!("Trading mode: LIVE (Betfair real-money)");
+                let betfair = BetfairClient::new().ok();
+                if betfair.is_none() {
+                    warn!("Betfair client unavailable — credentials may be missing");
+                }
+                (None, betfair, false)
+            }
+            _ => {
+                info!("Trading mode: DRY RUN (no execution)");
+                (None, None, true)
+            }
+        };
+    let executor = Executor::with_betfair(executor_manifold, executor_betfair, dry_run);
 
     // -- Main loop -------------------------------------------------------
 
@@ -250,7 +270,7 @@ async fn main() -> Result<()> {
 
                 match run_cycle(
                     &router, &mut enricher, &*llm, &mut orchestrator,
-                    &executor, &mut state, Some(&dashboard_state),
+                    &executor, &mut state, Some(&dashboard_state), mana_bankroll,
                 ).await {
                     Ok(report) => {
                         log_cycle_report(&report);
@@ -313,6 +333,7 @@ async fn run_cycle(
     executor: &Executor,
     state: &mut AgentState,
     dash: Option<&AppState>,
+    mana_bankroll: Option<Decimal>,
 ) -> Result<CycleReport> {
     info!(cycle = state.cycle_count + 1, "Starting cycle");
 
@@ -358,7 +379,7 @@ async fn run_cycle(
     // 4-5. Edge detection → Kelly sizing → risk approval (via orchestrator)
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Selecting { markets_total: markets_scanned }; }
     orchestrator.reset_cycle();
-    let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state);
+    let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state, mana_bankroll);
     // decisions contains KellyRejected + RiskRejected + Selected — all edges
     // above threshold — so its length equals the raw edge count.
     let edges_found = decisions.len();

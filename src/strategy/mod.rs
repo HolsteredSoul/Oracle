@@ -81,6 +81,7 @@ impl StrategyOrchestrator {
         &mut self,
         estimates: &[(Market, Estimate)],
         state: &AgentState,
+        mana_bankroll: Option<Decimal>,
     ) -> (Vec<SizedBet>, Vec<DecisionRecord>) {
         let mut decisions: Vec<DecisionRecord> = Vec::new();
 
@@ -93,9 +94,16 @@ impl StrategyOrchestrator {
         );
 
         // Step 2 – Kelly sizing
+        // Manifold uses Mana (play currency), so size against mana_bankroll rather
+        // than the real AUD bankroll to get meaningful paper-trade sizes.
         let mut sized: Vec<SizedBet> = Vec::new();
         for edge in edges {
-            match self.kelly.size_bet(&edge, state.bankroll) {
+            let bankroll = if edge.market.platform == "manifold" {
+                mana_bankroll.unwrap_or(state.bankroll)
+            } else {
+                state.bankroll
+            };
+            match self.kelly.size_bet(&edge, bankroll) {
                 Some(bet) => sized.push(bet),
                 None => {
                     debug!(
@@ -255,7 +263,7 @@ mod tests {
     fn test_no_estimates_returns_empty() {
         let mut orc = make_orchestrator();
         let state = make_state(dec!(1000));
-        let (bets, decisions) = orc.select_bets(&[], &state);
+        let (bets, decisions) = orc.select_bets(&[], &state, None);
         assert!(bets.is_empty());
         assert!(decisions.is_empty());
     }
@@ -269,7 +277,7 @@ mod tests {
             make_market("m1", MarketCategory::Weather, dec!(0.50)),
             make_estimate(dec!(0.54), dec!(0.9)),
         )];
-        let (bets, decisions) = orc.select_bets(&estimates, &state);
+        let (bets, decisions) = orc.select_bets(&estimates, &state, None);
         assert!(bets.is_empty());
         // No decisions logged because edge was filtered before the decision log
         assert!(decisions.is_empty());
@@ -284,7 +292,7 @@ mod tests {
             make_market("m1", MarketCategory::Weather, dec!(0.40)),
             make_estimate(dec!(0.60), dec!(0.8)),
         )];
-        let (bets, decisions) = orc.select_bets(&estimates, &state);
+        let (bets, decisions) = orc.select_bets(&estimates, &state, None);
         assert_eq!(bets.len(), 1);
         assert!(bets[0].bet_amount > Decimal::ZERO);
         assert!(matches!(decisions[0], DecisionRecord::Selected { .. }));
@@ -314,7 +322,7 @@ mod tests {
             ),
         ];
 
-        let (bets, _) = orc.select_bets(&estimates, &state);
+        let (bets, _) = orc.select_bets(&estimates, &state, None);
         assert!(!bets.is_empty());
         assert_eq!(bets[0].edge.market.id, "high_score");
     }
@@ -336,7 +344,7 @@ mod tests {
             make_market("m1", MarketCategory::Weather, dec!(0.40)),
             make_estimate(dec!(0.60), dec!(0.8)),
         )];
-        let (bets, decisions) = orc.select_bets(&estimates, &state);
+        let (bets, decisions) = orc.select_bets(&estimates, &state, None);
         assert!(bets.is_empty());
         assert!(decisions
             .iter()
@@ -358,7 +366,7 @@ mod tests {
             })
             .collect();
 
-        let (bets, decisions) = orc.select_bets(&estimates, &state);
+        let (bets, decisions) = orc.select_bets(&estimates, &state, None);
         assert!(bets.len() <= 5);
         assert!(decisions
             .iter()
@@ -373,7 +381,7 @@ mod tests {
             make_market("m1", MarketCategory::Weather, dec!(0.40)),
             make_estimate(dec!(0.60), dec!(0.8)),
         )];
-        let (bets, _) = orc.select_bets(&estimates, &state);
+        let (bets, _) = orc.select_bets(&estimates, &state, None);
         let decisions = StrategyOrchestrator::to_bet_decisions(&bets);
         assert_eq!(decisions.len(), bets.len());
         if let Some(d) = decisions.first() {
@@ -408,7 +416,7 @@ mod tests {
             .collect();
 
         // Fill the cycle limit (5 bets)
-        let (bets_first, _) = orc.select_bets(&estimates, &state);
+        let (bets_first, _) = orc.select_bets(&estimates, &state, None);
         assert_eq!(bets_first.len(), 5);
 
         // After reset, a new cycle can approve bets again
@@ -417,7 +425,7 @@ mod tests {
             make_market("new", MarketCategory::Weather, dec!(0.40)),
             make_estimate(dec!(0.60), dec!(0.8)),
         )];
-        let (bets_second, _) = orc.select_bets(&estimates2, &state);
+        let (bets_second, _) = orc.select_bets(&estimates2, &state, None);
         assert_eq!(bets_second.len(), 1);
     }
 
@@ -431,7 +439,7 @@ mod tests {
             make_market("m1", MarketCategory::Weather, dec!(0.40)),
             make_estimate(dec!(0.60), dec!(0.8)),
         )];
-        let (bets, decisions) = orc.select_bets(&estimates, &state);
+        let (bets, decisions) = orc.select_bets(&estimates, &state, None);
         assert!(bets.is_empty());
         assert!(decisions
             .iter()

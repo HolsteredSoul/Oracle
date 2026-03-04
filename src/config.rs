@@ -25,10 +25,19 @@ pub struct AppConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct AgentConfig {
     pub name: String,
+    /// Trading execution mode: "dry" | "paper" | "live"
+    #[serde(default = "AgentConfig::default_trading_mode")]
+    pub trading_mode: String,
     pub scan_interval_secs: u64,
     pub initial_bankroll: Decimal,
     pub survival_threshold: Decimal,
     pub currency: String,
+}
+
+impl AgentConfig {
+    fn default_trading_mode() -> String {
+        "dry".to_string()
+    }
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -77,6 +86,11 @@ pub struct ManifoldConfig {
     /// Only needed to place play-money bets; market scanning is public.
     #[serde(default)]
     pub api_key_env: Option<String>,
+    /// Mana balance used for Kelly bet sizing when trading on Manifold.
+    /// Manifold uses Mana (play currency), not AUD, so sizing against the
+    /// real bankroll would be incorrect. Defaults to 1000 Mana if unset.
+    #[serde(default)]
+    pub mana_bankroll: Option<Decimal>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
