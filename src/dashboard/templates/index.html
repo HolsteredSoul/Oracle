@@ -52,6 +52,30 @@
         .status-died { background: rgba(255,82,82,0.15); color: var(--red); border: 1px solid var(--red); }
         .status-paused { background: rgba(255,171,64,0.15); color: var(--orange); border: 1px solid var(--orange); }
         .refresh-info { color: var(--dim); font-size: 12px; }
+        .model-info { color: var(--purple); font-size: 11px; letter-spacing: 0.5px; opacity: 0.8; }
+
+        /* Progress banner */
+        .progress-banner {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 10px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 13px;
+        }
+        .progress-phase {
+            color: var(--orange);
+            font-weight: 700;
+            letter-spacing: 1px;
+            min-width: 120px;
+        }
+        .progress-phase::before {
+            content: '▶ ';
+            animation: pulse 1s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+        .progress-detail { color: var(--dim); }
 
         .grid {
             display: grid;
@@ -87,7 +111,7 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
-            padding: 0 24px 24px;
+            padding: 0 24px 16px;
         }
         @media (max-width: 900px) {
             .tables-grid { grid-template-columns: 1fr; }
@@ -105,15 +129,24 @@
         td { padding: 6px 8px; border-bottom: 1px solid var(--border); font-variant-numeric: tabular-nums; }
         tr:hover td { background: rgba(255,255,255,0.03); }
         .empty-msg { color: var(--dim); font-style: italic; padding: 16px 0; }
+        .error-msg { color: var(--red); }
+        .errors-section { padding: 0 24px 24px; }
     </style>
 </head>
 <body>
     <div class="header">
         <h1><span>ORACLE</span> Dashboard</h1>
-        <div style="display:flex; align-items:center; gap:12px;">
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+            <span id="model-info" class="model-info"></span>
             <span id="status-badge" class="status-badge status-alive">LOADING...</span>
             <span class="refresh-info">Auto-refresh: <span id="countdown">30</span>s</span>
         </div>
+    </div>
+
+    <!-- Live cycle progress (hidden when idle) -->
+    <div id="progress-banner" class="progress-banner" style="display:none;">
+        <span id="progress-phase" class="progress-phase"></span>
+        <span id="progress-detail" class="progress-detail"></span>
     </div>
 
     <div class="grid" id="stats-grid">
@@ -149,10 +182,22 @@
         </div>
     </div>
 
+    <!-- Error log (shown only when errors exist) -->
+    <div class="errors-section" id="errors-section" style="display:none;">
+        <div class="table-card">
+            <h3 style="color:var(--red);">Error Log <span id="error-count"></span></h3>
+            <table>
+                <thead><tr><th>Time</th><th>Cycle</th><th>Error</th></tr></thead>
+                <tbody id="errors-table"></tbody>
+            </table>
+        </div>
+    </div>
+
     <script>
         const API = window.location.origin;
         let balanceChart = null;
         let countdownVal = 30;
+        let progressCountdown = 5;
 
         // Balance chart
         function initChart() {
@@ -199,6 +244,20 @@
             }
         }
 
+        async function fetchProgress() {
+            try {
+                const data = await fetch(API+'/api/progress').then(r=>r.json());
+                updateProgress(data);
+            } catch(e) { /* non-critical */ }
+        }
+
+        async function fetchErrors() {
+            try {
+                const errs = await fetch(API+'/api/errors').then(r=>r.json());
+                updateErrors(errs);
+            } catch(e) { /* non-critical */ }
+        }
+
         function updateStatus(s) {
             const badge = document.getElementById('status-badge');
             if (s.status.includes('ALIVE')) { badge.className = 'status-badge status-alive'; badge.textContent = 'ALIVE'; }
@@ -225,6 +284,56 @@
             document.getElementById('costs-sub').textContent = 'API: $' + s.total_api_costs.toFixed(4) + ' | IB: $' + s.total_ib_commissions.toFixed(2);
         }
 
+        function updateProgress(data) {
+            const banner = document.getElementById('progress-banner');
+            const phaseEl = document.getElementById('progress-phase');
+            const detailEl = document.getElementById('progress-detail');
+            const modelEl = document.getElementById('model-info');
+
+            if (data.model) modelEl.textContent = data.model;
+
+            const s = data.progress.state;
+            if (s === 'idle') {
+                banner.style.display = 'none';
+                return;
+            }
+            banner.style.display = 'flex';
+
+            const labels = {
+                scanning: 'SCANNING', enriching: 'ENRICHING', estimating: 'ESTIMATING',
+                selecting: 'SELECTING', executing: 'EXECUTING', reconciling: 'RECONCILING',
+            };
+            phaseEl.textContent = labels[s] || s.toUpperCase();
+
+            if (s === 'estimating') {
+                const done = data.progress.markets_done || 0;
+                const total = data.progress.markets_total || 0;
+                detailEl.textContent = done < total
+                    ? total + ' markets — evaluating...'
+                    : total + ' markets evaluated';
+            } else if (s === 'enriching') {
+                detailEl.textContent = (data.progress.markets_total || 0) + ' markets';
+            } else if (s === 'executing') {
+                const n = data.progress.bets_total || 0;
+                detailEl.textContent = n === 0 ? 'no bets this cycle' : n + ' bet' + (n===1?'':'s');
+            } else {
+                detailEl.textContent = '';
+            }
+        }
+
+        function updateErrors(errors) {
+            const section = document.getElementById('errors-section');
+            if (!errors.length) { section.style.display = 'none'; return; }
+            section.style.display = 'block';
+            document.getElementById('error-count').textContent = '(' + errors.length + ')';
+            const recent = errors.slice().reverse().slice(0, 10);
+            document.getElementById('errors-table').innerHTML = recent.map(e => {
+                const t = new Date(e.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+                const msg = e.error.length > 100 ? e.error.substring(0, 100) + '…' : e.error;
+                return `<tr><td>${t}</td><td>${e.cycle_number}</td><td class="error-msg" title="${e.error}">${msg}</td></tr>`;
+            }).join('');
+        }
+
         function updateCycles(cycles) {
             const tbody = document.getElementById('cycles-table');
             if (!cycles.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No cycles yet</td></tr>'; return; }
@@ -243,16 +352,21 @@
             ).join('');
         }
 
-        // Countdown timer
+        // Countdown timer — main poll every 30s, progress poll every 5s
         function tick() {
             countdownVal--;
             document.getElementById('countdown').textContent = countdownVal;
-            if (countdownVal <= 0) { countdownVal = 30; fetchData(); }
+            if (countdownVal <= 0) { countdownVal = 30; fetchData(); fetchErrors(); }
+
+            progressCountdown--;
+            if (progressCountdown <= 0) { progressCountdown = 5; fetchProgress(); }
         }
 
         // Init
         initChart();
         fetchData();
+        fetchProgress();
+        fetchErrors();
         setInterval(tick, 1000);
     </script>
 </body>

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use oracle::dashboard::routes::{AppState, BalancePoint, CycleLogEntry, DashboardState};
+use oracle::dashboard::routes::{AppState, BalancePoint, CycleLogEntry, DashboardState, ErrorLogEntry, EvaluationProgress};
 use oracle::dashboard::spawn_dashboard;
 
 use oracle::config;
@@ -192,6 +192,9 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Store active model name in dashboard for display
+    *dashboard_state.active_model.write().await = llm.model_name().to_string();
+
     // Strategy orchestrator (edge detection → Kelly sizing → risk approval)
     let dec_006 = rust_decimal_macros::dec!(0.06);
     let dec_008 = rust_decimal_macros::dec!(0.08);
@@ -247,11 +250,12 @@ async fn main() -> Result<()> {
 
                 match run_cycle(
                     &router, &mut enricher, &*llm, &mut orchestrator,
-                    &executor, &mut state,
+                    &executor, &mut state, Some(&dashboard_state),
                 ).await {
                     Ok(report) => {
                         log_cycle_report(&report);
                         update_dashboard(&dashboard_state, &state, &report).await;
+                        *dashboard_state.progress.write().await = EvaluationProgress::Idle;
                         // Persist state after each cycle
                         if let Err(e) = storage::save_state(&state, None) {
                             error!(error = %e, "Failed to save state");
@@ -263,6 +267,19 @@ async fn main() -> Result<()> {
                     }
                     Err(e) => {
                         error!(error = %e, "Cycle failed — continuing to next");
+                        {
+                            let mut log = dashboard_state.error_log.write().await;
+                            log.push(ErrorLogEntry {
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                cycle_number: state.cycle_count + 1,
+                                error: e.to_string(),
+                            });
+                            if log.len() > 50 {
+                                let excess = log.len() - 50;
+                                log.drain(0..excess);
+                            }
+                        }
+                        *dashboard_state.progress.write().await = EvaluationProgress::Idle;
                         state.cycle_count += 1;
                     }
                 }
@@ -295,10 +312,12 @@ async fn run_cycle(
     orchestrator: &mut StrategyOrchestrator,
     executor: &Executor,
     state: &mut AgentState,
+    dash: Option<&AppState>,
 ) -> Result<CycleReport> {
     info!(cycle = state.cycle_count + 1, "Starting cycle");
 
     // 1. Scan markets
+    if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Scanning; }
     let markets = router.scan_all().await?;
     let markets_scanned = markets.len();
     info!(count = markets_scanned, "Markets scanned");
@@ -320,6 +339,7 @@ async fn run_cycle(
     }
 
     // 2. Enrich with data
+    if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Enriching { markets_total: markets_scanned }; }
     let enriched = enricher.enrich_batch(&markets).await?;
 
     // 3. LLM estimation
@@ -327,13 +347,16 @@ async fn run_cycle(
         let market_contexts: Vec<_> = enriched.iter()
             .map(|(m, c)| (m.clone(), c.clone()))
             .collect();
+        if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Estimating { markets_total: markets_scanned, markets_done: 0 }; }
         let ests = llm.batch_estimate(&market_contexts).await?;
+        if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Estimating { markets_total: markets_scanned, markets_done: markets_scanned }; }
         enriched.iter().zip(ests).map(|((m, _), e)| (m.clone(), e)).collect()
     } else {
         Vec::new() // No LLM key — skip estimation
     };
 
     // 4-5. Edge detection → Kelly sizing → risk approval (via orchestrator)
+    if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Selecting { markets_total: markets_scanned }; }
     orchestrator.reset_cycle();
     let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state);
     // decisions contains KellyRejected + RiskRejected + Selected — all edges
@@ -341,9 +364,11 @@ async fn run_cycle(
     let edges_found = decisions.len();
 
     // 6. Execute
+    if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Executing { bets_total: approved_bets.len() }; }
     let execution = executor.execute_batch(&approved_bets).await?;
 
     // 7. Reconcile
+    if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Reconciling; }
     let costs = CycleCosts {
         llm_cost: estimates.iter().map(|(_, e)| e.cost).sum(),
         data_cost: enricher.total_cost(),
@@ -378,24 +403,38 @@ async fn update_dashboard(dash: &AppState, state: &AgentState, report: &CycleRep
     // Mirror the latest agent state snapshot
     *dash.agent.write().await = state.clone();
 
-    // Append cycle log entry
-    dash.cycle_log.write().await.push(CycleLogEntry {
-        cycle_number: report.cycle_number,
-        timestamp: report.timestamp.to_rfc3339(),
-        markets_scanned: report.markets_scanned,
-        edges_found: report.edges_found,
-        bets_placed: report.bets_placed,
-        bets_failed: report.bets_failed,
-        cycle_cost: report.cycle_costs.total().to_f64().unwrap_or(0.0),
-        bankroll_after: report.bankroll_after.to_f64().unwrap_or(0.0),
-        status: format!("{}", report.status),
-    });
+    // Append cycle log entry (cap at 100 on the write side)
+    {
+        let mut log = dash.cycle_log.write().await;
+        log.push(CycleLogEntry {
+            cycle_number: report.cycle_number,
+            timestamp: report.timestamp.to_rfc3339(),
+            markets_scanned: report.markets_scanned,
+            edges_found: report.edges_found,
+            bets_placed: report.bets_placed,
+            bets_failed: report.bets_failed,
+            cycle_cost: report.cycle_costs.total().to_f64().unwrap_or(0.0),
+            bankroll_after: report.bankroll_after.to_f64().unwrap_or(0.0),
+            status: format!("{}", report.status),
+        });
+        if log.len() > 100 {
+            let excess = log.len() - 100;
+            log.drain(0..excess);
+        }
+    }
 
-    // Append balance history point
-    dash.balance_history.write().await.push(BalancePoint {
-        timestamp: report.timestamp.to_rfc3339(),
-        bankroll: report.bankroll_after.to_f64().unwrap_or(0.0),
-    });
+    // Append balance history point (cap at 500 on the write side)
+    {
+        let mut history = dash.balance_history.write().await;
+        history.push(BalancePoint {
+            timestamp: report.timestamp.to_rfc3339(),
+            bankroll: report.bankroll_after.to_f64().unwrap_or(0.0),
+        });
+        if history.len() > 500 {
+            let excess = history.len() - 500;
+            history.drain(0..excess);
+        }
+    }
 }
 
 /// Initialise the `tracing` subscriber.

@@ -13,6 +13,38 @@ use tokio::sync::RwLock;
 use crate::types::AgentState;
 
 // ---------------------------------------------------------------------------
+// Progress tracking types
+// ---------------------------------------------------------------------------
+
+/// Real-time snapshot of the current evaluation cycle phase.
+/// Serialises with a `state` tag: e.g. `{"state":"estimating","markets_total":218,"markets_done":0}`.
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum EvaluationProgress {
+    #[default]
+    Idle,
+    Scanning,
+    Enriching  { markets_total: usize },
+    Estimating { markets_total: usize, markets_done: usize },
+    Selecting  { markets_total: usize },
+    Executing  { bets_total: usize },
+    Reconciling,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ErrorLogEntry {
+    pub timestamp: String,
+    pub cycle_number: u64,
+    pub error: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProgressResponse {
+    pub progress: EvaluationProgress,
+    pub model: String,
+}
+
+// ---------------------------------------------------------------------------
 // Shared state
 // ---------------------------------------------------------------------------
 
@@ -22,6 +54,9 @@ pub struct DashboardState {
     pub cycle_log: RwLock<Vec<CycleLogEntry>>,
     pub balance_history: RwLock<Vec<BalancePoint>>,
     pub recent_trades: RwLock<Vec<TradeLogEntry>>,
+    pub progress: RwLock<EvaluationProgress>,
+    pub error_log: RwLock<Vec<ErrorLogEntry>>,
+    pub active_model: RwLock<String>,
 }
 
 impl DashboardState {
@@ -35,6 +70,9 @@ impl DashboardState {
                 bankroll: initial_balance,
             }]),
             recent_trades: RwLock::new(Vec::new()),
+            progress: RwLock::new(EvaluationProgress::Idle),
+            error_log: RwLock::new(Vec::new()),
+            active_model: RwLock::new(String::new()),
         }
     }
 }
@@ -167,7 +205,8 @@ pub async fn get_cycles(State(state): State<AppState>) -> Json<Vec<CycleLogEntry
 /// GET /api/balance-history
 pub async fn get_balance_history(State(state): State<AppState>) -> Json<Vec<BalancePoint>> {
     let history = state.balance_history.read().await;
-    Json(history.clone())
+    let start = history.len().saturating_sub(500);
+    Json(history[start..].to_vec())
 }
 
 /// GET /api/trades
@@ -222,6 +261,21 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<MetricsResponse>
         roi_pct: roi,
         cycles_run: agent.cycle_count,
     })
+}
+
+/// GET /api/progress
+/// Lightweight endpoint polled every 5 s during an active cycle.
+pub async fn get_progress(State(state): State<AppState>) -> Json<ProgressResponse> {
+    let progress = state.progress.read().await.clone();
+    let model = state.active_model.read().await.clone();
+    Json(ProgressResponse { progress, model })
+}
+
+/// GET /api/errors
+pub async fn get_errors(State(state): State<AppState>) -> Json<Vec<ErrorLogEntry>> {
+    let log = state.error_log.read().await;
+    let start = log.len().saturating_sub(50);
+    Json(log[start..].to_vec())
 }
 
 /// GET /health
