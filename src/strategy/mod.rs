@@ -125,9 +125,16 @@ impl StrategyOrchestrator {
         });
 
         // Step 4 – risk approval in rank order
+        // For Manifold bets, override the exposure bankroll with mana_bankroll
+        // so that exposure caps are evaluated in Mana, not AUD.
         let mut selected: Vec<SizedBet> = Vec::new();
         for bet in sized {
-            match self.risk.approve(&bet, state) {
+            let exposure_override = if bet.edge.market.platform == "manifold" {
+                mana_bankroll
+            } else {
+                None
+            };
+            match self.risk.approve(&bet, state, exposure_override) {
                 Ok(adjusted_amount) => {
                     info!(
                         market_id = %bet.edge.market.id,
@@ -243,6 +250,8 @@ mod tests {
             start_time: Utc::now(),
             peak_bankroll: bankroll,
             status: AgentStatus::Alive,
+            survival_threshold: Decimal::ZERO,
+            open_bets: Vec::new(),
         }
     }
 

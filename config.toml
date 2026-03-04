@@ -17,6 +17,8 @@ api_key_env = "OPENROUTER_API_KEY"
 max_tokens = 2048              # headroom for 5-market batch responses (was 1024)
 batch_size = 5                 # markets per LLM call — smaller = reliable parse (was 10)
 
+# Phase 2A — ForecastEx integration is not yet active. Client is a stub.
+# These settings are reserved for future IBKR event-contract execution.
 [platforms.forecastex]
 enabled = true
 ib_host = "127.0.0.1"

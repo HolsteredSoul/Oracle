@@ -9,7 +9,7 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use tracing::{info, warn};
 
-use crate::engine::executor::ExecutionReport;
+use crate::engine::executor::{ExecutedTrade, ExecutionReport};
 use crate::types::{AgentState, AgentStatus};
 
 // ---------------------------------------------------------------------------
@@ -64,6 +64,8 @@ pub struct CycleReport {
     pub bankroll_after: Decimal,
     pub status: AgentStatus,
     pub timestamp: chrono::DateTime<Utc>,
+    /// Executed trade details for dashboard and logging.
+    pub executed_trades: Vec<ExecutedTrade>,
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +114,7 @@ impl Accountant {
             bankroll_after: state.bankroll,
             status: state.status.clone(),
             timestamp: Utc::now(),
+            executed_trades: execution.executed.clone(),
         };
 
         info!(
@@ -154,7 +157,9 @@ mod tests {
                 platform: "dry-run".to_string(),
                 side: Side::Yes,
                 amount: per_trade,
-                receipt: TradeReceipt::dry_run(&format!("m{i}"), per_trade),
+                receipt: TradeReceipt::dry_run(&format!("m{i}"), per_trade, "AUD"),
+                edge_pct: 10.0,
+                confidence: 0.8,
             })
             .collect();
 

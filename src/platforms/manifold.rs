@@ -131,6 +131,31 @@ struct ManifoldUser {
     balance: f64,
 }
 
+/// Response from `/v0/market/{id}` GET — used to check resolution status.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifoldMarketDetail {
+    id: String,
+    #[serde(default)]
+    is_resolved: bool,
+    /// "YES", "NO", "MKT", or "CANCEL".
+    #[serde(default)]
+    resolution: Option<String>,
+    /// Probabilistic resolution (0.0–1.0). Used for "MKT" resolution.
+    #[serde(default)]
+    resolution_probability: Option<f64>,
+}
+
+/// A resolved Manifold bet outcome, returned by `check_resolutions()`.
+#[derive(Debug, Clone)]
+pub struct ManifoldResolution {
+    pub market_id: String,
+    pub bet_id: String,
+    pub won: bool,
+    /// Net Mana PnL: positive = profit, negative = loss, zero = cancelled.
+    pub pnl: Decimal,
+}
+
 // ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
@@ -317,6 +342,138 @@ impl ManifoldClient {
 }
 
 // ---------------------------------------------------------------------------
+// Resolution checking (non-trait, public method)
+// ---------------------------------------------------------------------------
+
+impl ManifoldClient {
+    /// Check which of the supplied open bets have resolved and compute their PnL.
+    ///
+    /// Queries `GET /v0/market/{id}` for each unique market in `open_bets`.
+    /// Markets that are still open are silently skipped.
+    /// Markets resolved as "CANCEL" yield zero PnL (full refund).
+    pub async fn check_resolutions(
+        &self,
+        open_bets: &[crate::types::TradeReceipt],
+    ) -> Vec<ManifoldResolution> {
+        use std::collections::HashSet;
+
+        let market_ids: HashSet<&str> =
+            open_bets.iter().map(|b| b.market_id.as_str()).collect();
+
+        let mut results = Vec::new();
+
+        for market_id in market_ids {
+            let url = format!("{BASE_URL}/market/{market_id}");
+            let resp = match self.http.get(&url).send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!(market_id, error = %e, "Resolution check: HTTP request failed");
+                    continue;
+                }
+            };
+
+            if !resp.status().is_success() {
+                warn!(market_id, status = %resp.status(), "Resolution check: non-OK response");
+                continue;
+            }
+
+            let detail: ManifoldMarketDetail = match resp.json().await {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!(market_id, error = %e, "Resolution check: JSON parse failed");
+                    continue;
+                }
+            };
+
+            if !detail.is_resolved {
+                continue;
+            }
+
+            let resolution = detail.resolution.as_deref().unwrap_or("");
+
+            for bet in open_bets.iter().filter(|b| b.market_id == market_id) {
+                let (won, pnl) = match resolution {
+                    "CANCEL" => (false, Decimal::ZERO), // refund — no gain or loss
+                    "YES" => {
+                        if bet.side == crate::types::Side::Yes {
+                            let profit = if bet.fill_price > Decimal::ZERO
+                                && bet.fill_price < Decimal::ONE
+                            {
+                                bet.amount * (Decimal::ONE - bet.fill_price) / bet.fill_price
+                            } else {
+                                Decimal::ZERO
+                            };
+                            (true, profit)
+                        } else {
+                            (false, -bet.amount)
+                        }
+                    }
+                    "NO" => {
+                        if bet.side == crate::types::Side::No {
+                            let fill_complement =
+                                Decimal::ONE - bet.fill_price;
+                            let profit = if fill_complement > Decimal::ZERO
+                                && fill_complement < Decimal::ONE
+                            {
+                                bet.amount * bet.fill_price / fill_complement
+                            } else {
+                                Decimal::ZERO
+                            };
+                            (true, profit)
+                        } else {
+                            (false, -bet.amount)
+                        }
+                    }
+                    "MKT" => {
+                        // Probabilistic resolution
+                        let res_prob = detail
+                            .resolution_probability
+                            .map(|p| {
+                                rust_decimal::Decimal::from_f64(p)
+                                    .unwrap_or(Decimal::ZERO)
+                            })
+                            .unwrap_or(Decimal::ZERO);
+                        let yes_frac = match &bet.side {
+                            crate::types::Side::Yes => res_prob,
+                            crate::types::Side::No => Decimal::ONE - res_prob,
+                        };
+                        let payout = if bet.fill_price > Decimal::ZERO {
+                            bet.amount * yes_frac / bet.fill_price
+                        } else {
+                            Decimal::ZERO
+                        };
+                        let won = payout >= bet.amount;
+                        (won, payout - bet.amount)
+                    }
+                    _ => {
+                        warn!(market_id, resolution, "Unknown Manifold resolution type");
+                        continue;
+                    }
+                };
+
+                info!(
+                    market_id,
+                    bet_id = %bet.order_id,
+                    resolution,
+                    won,
+                    pnl = %format!("{:.0} Mana", pnl),
+                    "Manifold bet resolved"
+                );
+
+                results.push(ManifoldResolution {
+                    market_id: market_id.to_string(),
+                    bet_id: bet.order_id.clone(),
+                    won,
+                    pnl,
+                });
+            }
+        }
+
+        results
+    }
+}
+
+// ---------------------------------------------------------------------------
 // PredictionPlatform trait implementation
 // ---------------------------------------------------------------------------
 
@@ -461,6 +618,7 @@ impl PredictionPlatform for ManifoldClient {
             fill_price: d(bet.prob_after),
             fees: Decimal::ZERO, // Manifold doesn't charge explicit fees on bets
             timestamp,
+            currency: "Mana".to_string(),
         })
     }
 
@@ -542,7 +700,7 @@ impl PredictionPlatform for ManifoldClient {
     }
 
     /// Manifold is play-money only — not a real-money execution venue.
-    fn is_executable(&self) -> bool {
+    fn is_real_money(&self) -> bool {
         false
     }
 
@@ -705,7 +863,7 @@ mod tests {
         assert!(client.is_ok());
         let client = client.unwrap();
         assert!(client.api_key.is_none());
-        assert!(!client.is_executable());
+        assert!(!client.is_real_money());
         assert_eq!(client.name(), "manifold");
     }
 

@@ -57,6 +57,7 @@ pub struct DashboardState {
     pub progress: RwLock<EvaluationProgress>,
     pub error_log: RwLock<Vec<ErrorLogEntry>>,
     pub active_model: RwLock<String>,
+    pub trading_mode: RwLock<String>,
 }
 
 impl DashboardState {
@@ -73,6 +74,7 @@ impl DashboardState {
             progress: RwLock::new(EvaluationProgress::Idle),
             error_log: RwLock::new(Vec::new()),
             active_model: RwLock::new(String::new()),
+            trading_mode: RwLock::new("dry".to_string()),
         }
     }
 }
@@ -84,6 +86,7 @@ impl DashboardState {
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusResponse {
     pub status: String,
+    pub trading_mode: String,
     pub bankroll: f64,
     pub peak_bankroll: f64,
     pub total_pnl: f64,
@@ -124,6 +127,7 @@ pub struct TradeLogEntry {
     pub platform: String,
     pub side: String,
     pub amount: f64,
+    pub currency: String,
     pub edge_pct: f64,
     pub confidence: f64,
 }
@@ -177,8 +181,11 @@ pub async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     let total_ib_commissions = agent.total_ib_commissions.to_f64().unwrap_or(0.0);
     let total_costs = agent.total_costs().to_f64().unwrap_or(0.0);
 
+    let trading_mode = state.trading_mode.read().await.clone();
+
     Json(StatusResponse {
         status: format!("{}", agent.status),
+        trading_mode,
         bankroll,
         peak_bankroll,
         total_pnl,
@@ -303,6 +310,7 @@ mod tests {
     fn test_status_response_serializes() {
         let resp = StatusResponse {
             status: "ALIVE".into(),
+            trading_mode: "paper".into(),
             bankroll: 100.0,
             peak_bankroll: 110.0,
             total_pnl: 10.0,
@@ -318,6 +326,7 @@ mod tests {
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("ALIVE"));
+        assert!(json.contains("paper"));
         assert!(json.contains("100"));
     }
 

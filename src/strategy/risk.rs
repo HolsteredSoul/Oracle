@@ -121,14 +121,20 @@ impl RiskManager {
     /// Check if a sized bet passes all risk checks.
     ///
     /// Returns Ok(drawdown-adjusted bet amount) or Err(reason).
+    ///
+    /// `bankroll_override` replaces `state.bankroll` for the exposure cap
+    /// calculations only (checks 4 and 5). Pass `Some(mana_bankroll)` for
+    /// Manifold bets so exposure is evaluated against Mana, not AUD.
+    /// The drawdown check always uses `state.bankroll` (real money health).
     pub fn approve(
         &self,
         bet: &SizedBet,
         state: &AgentState,
+        bankroll_override: Option<Decimal>,
     ) -> Result<Decimal, RejectionReason> {
-        let bankroll = state.bankroll;
+        let exposure_bankroll = bankroll_override.unwrap_or(state.bankroll);
 
-        // 1. Drawdown check
+        // 1. Drawdown check (always against real AUD bankroll)
         let drawdown = self.drawdown_from_peak(state);
         if drawdown >= self.config.drawdown_halt_pct {
             return Err(RejectionReason::DrawdownHalt {
@@ -152,25 +158,25 @@ impl RiskManager {
             });
         }
 
-        // 4. Total exposure check
+        // 4. Total exposure check (uses exposure_bankroll for correct currency)
         let new_total = self.total_exposure + bet.bet_amount;
-        let max_exposure = bankroll * self.config.max_exposure_pct;
+        let max_exposure = exposure_bankroll * self.config.max_exposure_pct;
         if new_total > max_exposure {
             return Err(RejectionReason::ExposureLimitExceeded {
-                current: (new_total / bankroll) * dec!(100),
+                current: (new_total / exposure_bankroll) * dec!(100),
                 limit: self.config.max_exposure_pct * dec!(100),
             });
         }
 
-        // 5. Category exposure check
+        // 5. Category exposure check (uses exposure_bankroll for correct currency)
         let category = &bet.edge.market.category;
         let current_cat = self.category_exposure.get(category).copied().unwrap_or(Decimal::ZERO);
         let new_cat = current_cat + bet.bet_amount;
-        let max_cat = bankroll * self.config.max_category_exposure_pct;
+        let max_cat = exposure_bankroll * self.config.max_category_exposure_pct;
         if new_cat > max_cat {
             return Err(RejectionReason::CategoryLimitExceeded {
                 category: category.clone(),
-                current: (new_cat / bankroll) * dec!(100),
+                current: (new_cat / exposure_bankroll) * dec!(100),
                 limit: self.config.max_category_exposure_pct * dec!(100),
             });
         }
@@ -247,6 +253,8 @@ mod tests {
             start_time: Utc::now() - Duration::days(7),
             peak_bankroll: peak,
             status: AgentStatus::Alive,
+            survival_threshold: Decimal::ZERO,
+            open_bets: Vec::new(),
         }
     }
 
@@ -291,7 +299,7 @@ mod tests {
         let rm = RiskManager::new(RiskConfig::default());
         let state = make_agent_state(dec!(1000), dec!(1000));
         let bet = make_sized_bet(MarketCategory::Weather, dec!(50));
-        let result = rm.approve(&bet, &state);
+        let result = rm.approve(&bet, &state, None);
         assert!(result.is_ok());
         assert!(result.unwrap() > Decimal::ZERO);
     }
@@ -302,7 +310,7 @@ mod tests {
         rm.total_exposure = dec!(550); // Already at 55% of $1000
         let state = make_agent_state(dec!(1000), dec!(1000));
         let bet = make_sized_bet(MarketCategory::Weather, dec!(60)); // Would push to 61%
-        let result = rm.approve(&bet, &state);
+        let result = rm.approve(&bet, &state, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RejectionReason::ExposureLimitExceeded { .. }));
     }
@@ -313,7 +321,7 @@ mod tests {
         rm.category_exposure.insert(MarketCategory::Weather, dec!(240)); // Already at 24%
         let state = make_agent_state(dec!(1000), dec!(1000));
         let bet = make_sized_bet(MarketCategory::Weather, dec!(20)); // Would push to 26%
-        let result = rm.approve(&bet, &state);
+        let result = rm.approve(&bet, &state, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RejectionReason::CategoryLimitExceeded { .. }));
     }
@@ -324,7 +332,7 @@ mod tests {
         rm.position_count = 20;
         let state = make_agent_state(dec!(1000), dec!(1000));
         let bet = make_sized_bet(MarketCategory::Weather, dec!(50));
-        let result = rm.approve(&bet, &state);
+        let result = rm.approve(&bet, &state, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RejectionReason::MaxPositionsReached { .. }));
     }
@@ -335,7 +343,7 @@ mod tests {
         rm.cycle_bets = 5;
         let state = make_agent_state(dec!(1000), dec!(1000));
         let bet = make_sized_bet(MarketCategory::Weather, dec!(50));
-        let result = rm.approve(&bet, &state);
+        let result = rm.approve(&bet, &state, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RejectionReason::MaxBetsPerCycleReached { .. }));
     }
@@ -345,7 +353,7 @@ mod tests {
         let rm = RiskManager::new(RiskConfig::default());
         let state = make_agent_state(dec!(550), dec!(1000)); // 45% drawdown, above 40% halt
         let bet = make_sized_bet(MarketCategory::Weather, dec!(10));
-        let result = rm.approve(&bet, &state);
+        let result = rm.approve(&bet, &state, None);
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), RejectionReason::DrawdownHalt { .. }));
     }

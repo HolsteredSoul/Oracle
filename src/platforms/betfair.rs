@@ -961,6 +961,7 @@ impl PredictionPlatform for BetfairClient {
             fill_price,
             fees,
             timestamp,
+            currency: "AUD".to_string(),
         })
     }
 
@@ -1032,7 +1033,7 @@ impl PredictionPlatform for BetfairClient {
     }
 
     /// Betfair is a real-money execution venue.
-    fn is_executable(&self) -> bool {
+    fn is_real_money(&self) -> bool {
         true
     }
 
@@ -1329,10 +1330,10 @@ mod tests {
         assert!(ids.contains(&"2378961")); // Politics
     }
 
-    // -- is_executable --
+    // -- is_real_money --
 
     #[test]
-    fn test_is_executable() {
+    fn test_is_real_money() {
         // Can't create a real client without env vars, but we can test
         // that the trait method returns true by checking the const intent
         assert_eq!(PLATFORM_NAME, "betfair");

@@ -6,6 +6,7 @@
 
 use anyhow::{Context, Result};
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal_macros::dec;
 use tracing::{debug, info, warn};
 
@@ -35,6 +36,10 @@ pub struct ExecutedTrade {
     pub side: Side,
     pub amount: Decimal,
     pub receipt: TradeReceipt,
+    /// Edge percentage at time of bet (for dashboard display).
+    pub edge_pct: f64,
+    /// Estimate confidence at time of bet (for dashboard display).
+    pub confidence: f64,
 }
 
 #[derive(Debug, Clone)]
@@ -76,6 +81,23 @@ impl Executor {
         }
     }
 
+    /// Check which open Manifold bets have resolved and return outcomes.
+    ///
+    /// Returns an empty vec when no Manifold client is configured or
+    /// `open_bets` is empty.
+    pub async fn check_manifold_resolutions(
+        &self,
+        open_bets: &[crate::types::TradeReceipt],
+    ) -> Vec<crate::platforms::manifold::ManifoldResolution> {
+        if open_bets.is_empty() {
+            return Vec::new();
+        }
+        match &self.manifold {
+            Some(client) => client.check_resolutions(open_bets).await,
+            None => Vec::new(),
+        }
+    }
+
     /// Execute a batch of sized bets.
     ///
     /// In dry-run mode, logs but doesn't place real bets.
@@ -97,6 +119,8 @@ impl Executor {
 
         for bet in bets {
             let platform = bet.edge.market.platform.as_str();
+            let edge_pct = (bet.edge.edge * dec!(100)).to_f64().unwrap_or(0.0);
+            let confidence = bet.edge.estimate.confidence.to_f64().unwrap_or(0.0);
 
             // Manifold paper execution: always attempt regardless of dry_run (play money).
             if platform == "manifold" {
@@ -109,6 +133,8 @@ impl Executor {
                                 side: bet.edge.side.clone(),
                                 amount: bet.bet_amount,
                                 receipt,
+                                edge_pct,
+                                confidence,
                             });
                             report.total_committed += bet.bet_amount;
                         }
@@ -139,7 +165,9 @@ impl Executor {
                         platform: "dry-run".to_string(),
                         side: bet.edge.side.clone(),
                         amount: bet.bet_amount,
-                        receipt: TradeReceipt::dry_run(&bet.edge.market.id, bet.bet_amount),
+                        receipt: TradeReceipt::dry_run(&bet.edge.market.id, bet.bet_amount, "Mana"),
+                        edge_pct,
+                        confidence,
                     });
                     report.total_committed += bet.bet_amount;
                 }
@@ -161,7 +189,9 @@ impl Executor {
                     platform: "dry-run".to_string(),
                     side: bet.edge.side.clone(),
                     amount: bet.bet_amount,
-                    receipt: TradeReceipt::dry_run(&bet.edge.market.id, bet.bet_amount),
+                    receipt: TradeReceipt::dry_run(&bet.edge.market.id, bet.bet_amount, "AUD"),
+                    edge_pct,
+                    confidence,
                 });
                 report.total_committed += bet.bet_amount;
                 continue;
@@ -179,6 +209,8 @@ impl Executor {
                                 side: bet.edge.side.clone(),
                                 amount: bet.bet_amount,
                                 receipt,
+                                edge_pct,
+                                confidence,
                             });
                             report.total_committed += bet.bet_amount;
                         }
@@ -249,7 +281,8 @@ impl Executor {
 
 impl TradeReceipt {
     /// Create a dry-run receipt (no real execution).
-    pub fn dry_run(market_id: &str, amount: Decimal) -> Self {
+    /// `currency` should be "AUD" for real-money platforms or "Mana" for Manifold.
+    pub fn dry_run(market_id: &str, amount: Decimal, currency: &str) -> Self {
         Self {
             order_id: format!("dry-run-{}", uuid::Uuid::new_v4()),
             market_id: market_id.to_string(),
@@ -259,6 +292,7 @@ impl TradeReceipt {
             fill_price: Decimal::ZERO,
             fees: Decimal::ZERO,
             timestamp: chrono::Utc::now(),
+            currency: currency.to_string(),
         }
     }
 }
@@ -332,10 +366,11 @@ mod tests {
 
     #[test]
     fn test_dry_run_receipt() {
-        let receipt = TradeReceipt::dry_run("test-market", dec!(100));
+        let receipt = TradeReceipt::dry_run("test-market", dec!(100), "AUD");
         assert!(receipt.order_id.starts_with("dry-run-"));
         assert_eq!(receipt.amount, dec!(100));
         assert_eq!(receipt.fees, Decimal::ZERO);
+        assert_eq!(receipt.currency, "AUD");
     }
 
     #[tokio::test]

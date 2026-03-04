@@ -35,6 +35,20 @@ Automatic failover: if the primary model fails after retries, the agent transpar
 - **Betfair API app key** + funded account (for live execution)
 - Optional: Manifold API key (for paper-trading writes), data source API keys
 
+## Trading Modes
+
+Set `trading_mode` in `config.toml` under `[agent]`:
+
+| Mode | Description | Requires |
+|------|-------------|----------|
+| `dry` | Scan and estimate only — no execution | `OPENROUTER_API_KEY` |
+| `paper` | Place play-money bets on Manifold (Mana, not AUD) | + `MANIFOLD_API_KEY` |
+| `live` | Place real-money bets on Betfair Exchange | + Betfair credentials |
+
+**Mana vs AUD**: Manifold uses its own play-money currency (Mana). Set `mana_bankroll`
+under `[platforms.manifold]` in `config.toml` to match your Manifold balance. Kelly sizing
+and risk limits for Manifold bets use Mana, not AUD — they are tracked separately.
+
 ## Quick Start
 
 ```bash
@@ -43,11 +57,13 @@ git clone https://github.com/HolsteredSoul/Oracle.git
 cd Oracle
 cp .env.example .env
 # Fill in your API keys in .env
+# Minimum: set OPENROUTER_API_KEY
+# For paper trading: also set MANIFOLD_API_KEY and trading_mode = "paper" in config.toml
 
 # 2. Build
 cargo build --release
 
-# 3. Run (dry-run / paper trading mode)
+# 3. Run
 cargo run -- --config config.toml
 
 # 4. Run release build
