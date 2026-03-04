@@ -9,6 +9,7 @@
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
+use futures::future::join_all;
 use reqwest::Client;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
@@ -41,6 +42,7 @@ const MAX_RETRIES: u32 = 3;
 
 /// Base delay for exponential backoff (ms).
 const BASE_BACKOFF_MS: u64 = 1000;
+
 
 // ---------------------------------------------------------------------------
 // Cost tables (approximate per-1K-token pricing via OpenRouter)
@@ -417,14 +419,49 @@ impl LlmEstimator for OpenRouterClient {
         let mut all_results: Vec<Estimate> = Vec::with_capacity(markets.len());
         let mut total_fallbacks = 0u32;
 
-        for chunk in markets.chunks(batch_size) {
-            let system = AnthropicClient::system_prompt();
-            let user_msg = AnthropicClient::build_batch_prompt(chunk);
+        // Phase 1: Build all chunk prompts up-front (synchronous).
+        let system = AnthropicClient::system_prompt();
+        let prompts: Vec<String> = markets
+            .chunks(batch_size)
+            .map(|chunk| AnthropicClient::build_batch_prompt(chunk))
+            .collect();
 
-            let (response_text, tokens, cost) = self
-                .call_api(system, &user_msg)
-                .await
-                .context("Batch estimation API call failed")?;
+        // Phase 2: Dispatch all chunks concurrently.
+        // Pre-collect futures into a Vec so Rust can resolve the borrow lifetimes
+        // before driving them all at once with join_all. All futures share &self
+        // (immutable) and &system — safe because OpenRouterClient uses atomics.
+        // With MAX_MARKETS_TO_PROCESS=80 and batch_size=5 there are at most 16
+        // concurrent requests, well within OpenRouter's rate limits.
+        let chunk_futures: Vec<_> = prompts.iter()
+            .map(|msg| self.call_api(&system, msg))
+            .collect();
+        let api_results: Vec<Result<(String, u32, f64)>> = join_all(chunk_futures).await;
+
+        // Phase 3: Parse each chunk result and handle fallbacks sequentially.
+        // Fallbacks only trigger on parse failure (uncommon), not on API errors,
+        // which are handled by retry logic inside call_api.
+        for (chunk, api_result) in markets.chunks(batch_size).zip(api_results.into_iter()) {
+            let (response_text, tokens, cost) = match api_result {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        chunk_size = chunk.len(),
+                        "Chunk API call failed after retries — using market prices as fallback"
+                    );
+                    for (market, _) in chunk {
+                        total_fallbacks += 1;
+                        all_results.push(Estimate {
+                            probability: market.current_price_yes,
+                            confidence: dec!(0.1),
+                            reasoning: format!("API call failed: {e}"),
+                            tokens_used: 0,
+                            cost: Decimal::ZERO,
+                        });
+                    }
+                    continue;
+                }
+            };
 
             let expected_ids: Vec<&str> = chunk.iter().map(|(m, _)| m.id.as_str()).collect();
             let parsed = AnthropicClient::parse_batch_response(&response_text, &expected_ids);

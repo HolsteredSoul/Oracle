@@ -40,6 +40,15 @@ const MAX_HOURS_TO_DEADLINE: f64 = 24.0 * 365.0; // 1 year
 /// (not enough time to act on information).
 const MIN_HOURS_TO_DEADLINE: f64 = 1.0;
 
+/// Maximum markets passed to the enrichment and LLM estimation stages.
+///
+/// The scanner sorts by priority score first, so the top N are the richest
+/// candidates (cross-referenced, liquid, price-central). Capping here
+/// concentrates the LLM budget on the highest-value opportunities and
+/// directly reduces per-cycle cost. At batch_size=5 and 80 markets,
+/// this means 16 LLM batch calls instead of 44 for 218 markets.
+const MAX_MARKETS_TO_PROCESS: usize = 80;
+
 // ---------------------------------------------------------------------------
 // Text similarity
 // ---------------------------------------------------------------------------
@@ -236,9 +245,15 @@ impl MarketRouter {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
+        // 6. Cap to top-N for downstream enrichment + LLM estimation.
+        //    Sorted by priority score above, so we drop the lowest-ranked markets.
+        let pre_cap = all_markets.len();
+        all_markets.truncate(MAX_MARKETS_TO_PROCESS);
+
         info!(
-            total = all_markets.len(),
-            "Market scan complete"
+            total = pre_cap,
+            after_cap = all_markets.len(),
+            "Market scan complete (capped for processing)"
         );
 
         Ok(all_markets)
