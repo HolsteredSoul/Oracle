@@ -494,7 +494,7 @@ impl PredictionPlatform for MetaculusClient {
     }
 
     /// Metaculus is read-only — not an execution venue.
-    fn is_executable(&self) -> bool {
+    fn is_real_money(&self) -> bool {
         false
     }
 
@@ -790,7 +790,7 @@ mod tests {
         let client = MetaculusClient::new(None);
         assert!(client.is_ok());
         let client = client.unwrap();
-        assert!(!client.is_executable());
+        assert!(!client.is_real_money());
         assert_eq!(client.name(), "metaculus");
     }
 }

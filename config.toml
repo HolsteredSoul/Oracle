@@ -1,5 +1,9 @@
 [agent]
 name = "ORACLE-001"
+trading_mode = "paper"         # "dry" | "paper" | "live"
+                               #   dry   — scan only, no execution
+                               #   paper — Manifold play-money (default)
+                               #   live  — Betfair real-money
 scan_interval_secs = 600       # 10 minutes
 initial_bankroll = 100.0       # AUD
 survival_threshold = 0.0       # Die at $0
@@ -13,6 +17,8 @@ api_key_env = "OPENROUTER_API_KEY"
 max_tokens = 2048              # headroom for 5-market batch responses (was 1024)
 batch_size = 5                 # markets per LLM call — smaller = reliable parse (was 10)
 
+# Phase 2A — ForecastEx integration is not yet active. Client is a stub.
+# These settings are reserved for future IBKR event-contract execution.
 [platforms.forecastex]
 enabled = true
 ib_host = "127.0.0.1"
@@ -27,6 +33,7 @@ api_key_env = "METACULUS_API_TOKEN"  # Required — get from metaculus.com/accou
 [platforms.manifold]
 enabled = true                 # Play-money validation + sentiment signal
 api_key_env = "MANIFOLD_API_KEY"  # Optional — only needed for paper-trading writes
+mana_bankroll = 1000.0         # Mana balance for Kelly sizing (Manifold play currency)
 
 [platforms.betfair]
 enabled = false                # Betfair Exchange — real-money execution

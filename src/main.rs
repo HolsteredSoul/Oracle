@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
-use oracle::dashboard::routes::{AppState, BalancePoint, CycleLogEntry, DashboardState, ErrorLogEntry, EvaluationProgress};
+use oracle::dashboard::routes::{AppState, BalancePoint, CycleLogEntry, DashboardState, ErrorLogEntry, EvaluationProgress, TradeLogEntry};
 use oracle::dashboard::spawn_dashboard;
 
 use oracle::config;
@@ -83,6 +83,7 @@ async fn main() -> Result<()> {
             s
         }
     };
+    state.survival_threshold = cfg.agent.survival_threshold;
 
     // -- Dashboard -------------------------------------------------------
 
@@ -192,8 +193,9 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Store active model name in dashboard for display
+    // Store active model name and trading mode in dashboard for display
     *dashboard_state.active_model.write().await = llm.model_name().to_string();
+    *dashboard_state.trading_mode.write().await = cfg.agent.trading_mode.clone();
 
     // Strategy orchestrator (edge detection → Kelly sizing → risk approval)
     let dec_006 = rust_decimal_macros::dec!(0.06);
@@ -219,14 +221,34 @@ async fn main() -> Result<()> {
         }),
     );
 
-    // Executor — create a separate Betfair client for execution if enabled
-    let executor_betfair = if cfg.platforms.betfair.enabled {
-        BetfairClient::new().ok()
-    } else {
-        None
-    };
-    let dry_run = executor_betfair.is_none(); // dry-run if no real-money venue
-    let executor = Executor::with_betfair(None, executor_betfair, dry_run);
+    // Executor — create platform clients based on trading_mode
+    let mana_bankroll = cfg.platforms.manifold.mana_bankroll;
+    let (executor_manifold, executor_betfair, dry_run) =
+        match cfg.agent.trading_mode.as_str() {
+            "paper" => {
+                info!("Trading mode: PAPER (Manifold play-money)");
+                let api_key = cfg.platforms.manifold.api_key_env.as_deref()
+                    .and_then(|env| std::env::var(env).ok());
+                let client = ManifoldClient::new(api_key).ok();
+                if client.is_none() {
+                    warn!("Manifold client unavailable — MANIFOLD_API_KEY may be missing");
+                }
+                (client, None, false)
+            }
+            "live" => {
+                info!("Trading mode: LIVE (Betfair real-money)");
+                let betfair = BetfairClient::new().ok();
+                if betfair.is_none() {
+                    warn!("Betfair client unavailable — credentials may be missing");
+                }
+                (None, betfair, false)
+            }
+            _ => {
+                info!("Trading mode: DRY RUN (no execution)");
+                (None, None, true)
+            }
+        };
+    let executor = Executor::with_betfair(executor_manifold, executor_betfair, dry_run);
 
     // -- Main loop -------------------------------------------------------
 
@@ -248,9 +270,26 @@ async fn main() -> Result<()> {
                     break;
                 }
 
+                // Check if any previously placed bets have resolved.
+                if !state.open_bets.is_empty() {
+                    let resolutions = executor.check_manifold_resolutions(&state.open_bets).await;
+                    if !resolutions.is_empty() {
+                        let mut resolved_ids = std::collections::HashSet::new();
+                        for r in &resolutions {
+                            state.record_resolution(r.pnl, r.won);
+                            resolved_ids.insert(r.bet_id.clone());
+                        }
+                        state.open_bets.retain(|b| !resolved_ids.contains(&b.order_id));
+                        // Persist updated state after resolutions
+                        if let Err(e) = storage::save_state(&state, None) {
+                            error!(error = %e, "Failed to save state after resolution");
+                        }
+                    }
+                }
+
                 match run_cycle(
                     &router, &mut enricher, &*llm, &mut orchestrator,
-                    &executor, &mut state, Some(&dashboard_state),
+                    &executor, &mut state, Some(&dashboard_state), mana_bankroll,
                 ).await {
                     Ok(report) => {
                         log_cycle_report(&report);
@@ -313,6 +352,7 @@ async fn run_cycle(
     executor: &Executor,
     state: &mut AgentState,
     dash: Option<&AppState>,
+    mana_bankroll: Option<Decimal>,
 ) -> Result<CycleReport> {
     info!(cycle = state.cycle_count + 1, "Starting cycle");
 
@@ -358,7 +398,7 @@ async fn run_cycle(
     // 4-5. Edge detection → Kelly sizing → risk approval (via orchestrator)
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Selecting { markets_total: markets_scanned }; }
     orchestrator.reset_cycle();
-    let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state);
+    let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state, mana_bankroll);
     // decisions contains KellyRejected + RiskRejected + Selected — all edges
     // above threshold — so its length equals the raw edge count.
     let edges_found = decisions.len();
@@ -367,7 +407,14 @@ async fn run_cycle(
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Executing { bets_total: approved_bets.len() }; }
     let execution = executor.execute_batch(&approved_bets).await?;
 
-    // 7. Reconcile
+    // 7. Track open bets (for resolution checking on next cycles)
+    for trade in &execution.executed {
+        if trade.platform != "dry-run" {
+            state.open_bets.push(trade.receipt.clone());
+        }
+    }
+
+    // 8. Reconcile
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Reconciling; }
     let costs = CycleCosts {
         llm_cost: estimates.iter().map(|(_, e)| e.cost).sum(),
@@ -420,6 +467,27 @@ async fn update_dashboard(dash: &AppState, state: &AgentState, report: &CycleRep
         if log.len() > 100 {
             let excess = log.len() - 100;
             log.drain(0..excess);
+        }
+    }
+
+    // Append executed trades to recent trades log (cap at 200)
+    if !report.executed_trades.is_empty() {
+        let mut trades = dash.recent_trades.write().await;
+        for t in &report.executed_trades {
+            trades.push(TradeLogEntry {
+                timestamp: t.receipt.timestamp.to_rfc3339(),
+                market_id: t.market_id.clone(),
+                platform: t.platform.clone(),
+                side: format!("{}", t.side),
+                amount: t.amount.to_f64().unwrap_or(0.0),
+                currency: t.receipt.currency.clone(),
+                edge_pct: t.edge_pct,
+                confidence: t.confidence,
+            });
+        }
+        if trades.len() > 200 {
+            let excess = trades.len() - 200;
+            trades.drain(0..excess);
         }
     }
 

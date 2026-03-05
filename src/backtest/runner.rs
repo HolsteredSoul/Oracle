@@ -24,6 +24,10 @@ pub struct ResolvedMarket {
     pub id: String,
     pub question: String,
     pub category: MarketCategory,
+    /// Platform the market was on: "manifold", "betfair", etc.
+    /// Used to select the correct bankroll for Kelly sizing.
+    #[allow(dead_code)]
+    pub platform: String,
     /// The market price at the time the agent would have traded.
     pub market_price_yes: Decimal,
     /// Our simulated LLM estimate.
@@ -86,6 +90,9 @@ pub struct Backtester {
     edge_detector: EdgeDetector,
     kelly: KellyCalculator,
     risk_config: RiskConfig,
+    /// Mana balance for sizing bets on Manifold markets.
+    /// When `None`, falls back to `initial_bankroll` (AUD).
+    pub mana_bankroll: Option<Decimal>,
 }
 
 impl Backtester {
@@ -98,6 +105,7 @@ impl Backtester {
             edge_detector: EdgeDetector::new(edge_config),
             kelly: KellyCalculator::new(kelly_config),
             risk_config,
+            mana_bankroll: None,
         }
     }
 
@@ -158,14 +166,20 @@ impl Backtester {
 
             let kelly_frac = kelly_raw * self.kelly.config().multiplier;
             let bet_frac = kelly_frac.min(self.kelly.config().max_bet_pct);
-            let bet_amount = (bet_frac * state.bankroll).max(Decimal::ZERO);
+            // Use mana_bankroll for Manifold markets so sizing reflects play currency.
+            let effective_bankroll = if market.platform == "manifold" {
+                self.mana_bankroll.unwrap_or(state.bankroll)
+            } else {
+                state.bankroll
+            };
+            let bet_amount = (bet_frac * effective_bankroll).max(Decimal::ZERO);
 
             if bet_amount < self.kelly.config().min_bet_size {
                 continue;
             }
 
-            // Risk check (simplified — just check exposure)
-            let max_exposure = state.bankroll * self.risk_config.max_exposure_pct;
+            // Risk check (simplified — just check exposure against correct bankroll)
+            let max_exposure = effective_bankroll * self.risk_config.max_exposure_pct;
             if bet_amount > max_exposure {
                 continue;
             }
@@ -318,6 +332,7 @@ mod tests {
             id: id.to_string(),
             question: format!("Test market {id}"),
             category,
+            platform: "betfair".to_string(),
             market_price_yes: Decimal::from_f64_retain(market_price).unwrap_or(Decimal::ZERO),
             estimated_probability: Decimal::from_f64_retain(estimated).unwrap_or(Decimal::ZERO),
             confidence: dec!(0.8),

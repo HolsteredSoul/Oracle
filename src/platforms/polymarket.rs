@@ -327,7 +327,7 @@ impl PredictionPlatform for PolymarketClient {
             amount = %amount,
             "Polymarket execution not yet wired — returning dry-run receipt"
         );
-        Ok(TradeReceipt::dry_run(market_id, amount))
+        Ok(TradeReceipt::dry_run(market_id, amount, "USDC"))
     }
 
     async fn get_positions(&self) -> Result<Vec<Position>> {
@@ -349,7 +349,7 @@ impl PredictionPlatform for PolymarketClient {
         })
     }
 
-    fn is_executable(&self) -> bool {
+    fn is_real_money(&self) -> bool {
         false // Until CLOB signing is wired up
     }
 
@@ -586,6 +586,6 @@ mod tests {
     fn test_client_construction() {
         let client = PolymarketClient::new().unwrap();
         assert_eq!(client.name(), "polymarket");
-        assert!(!client.is_executable()); // until CLOB is wired
+        assert!(!client.is_real_money()); // until CLOB is wired
     }
 }

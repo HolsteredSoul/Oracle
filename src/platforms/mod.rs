@@ -45,7 +45,7 @@ pub trait PredictionPlatform: Send + Sync {
     async fn check_liquidity(&self, market_id: &str) -> Result<LiquidityInfo>;
 
     /// Whether this platform supports real-money execution.
-    fn is_executable(&self) -> bool;
+    fn is_real_money(&self) -> bool;
 
     /// Platform name for logging and identification.
     fn name(&self) -> &str;

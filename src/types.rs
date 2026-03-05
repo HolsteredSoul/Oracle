@@ -253,17 +253,27 @@ pub struct TradeReceipt {
     pub fill_price: Decimal,
     pub fees: Decimal,
     pub timestamp: DateTime<Utc>,
+    /// Currency of the bet amount: "AUD", "Mana", etc.
+    #[serde(default = "TradeReceipt::default_currency")]
+    pub currency: String,
+}
+
+impl TradeReceipt {
+    pub fn default_currency() -> String {
+        "AUD".to_string()
+    }
 }
 
 impl fmt::Display for TradeReceipt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "[{}] {} {} ${:.2} @ {}¢ (fees: ${:.4}) [{}]",
+            "[{}] {} {} {:.2} {} @ {}¢ (fees: {:.4}) [{}]",
             self.platform,
             self.side,
             self.market_id,
             self.amount,
+            self.currency,
             (self.fill_price * dec!(100)).round_dp(2),
             self.fees,
             self.order_id,
@@ -524,6 +534,14 @@ pub struct AgentState {
     pub start_time: DateTime<Utc>,
     pub peak_bankroll: Decimal,
     pub status: AgentStatus,
+    /// Bankroll floor: agent dies when bankroll falls to or below this value.
+    /// Defaults to 0.0 (die at $0). Set via config `survival_threshold`.
+    #[serde(default)]
+    pub survival_threshold: Decimal,
+    /// Bets placed but not yet resolved. Persisted so resolution can be
+    /// checked across restarts. `#[serde(default)]` handles old JSON files.
+    #[serde(default)]
+    pub open_bets: Vec<TradeReceipt>,
 }
 
 impl fmt::Display for AgentState {
@@ -560,6 +578,8 @@ impl AgentState {
             start_time: Utc::now(),
             peak_bankroll: initial_bankroll,
             status: AgentStatus::Alive,
+            survival_threshold: Decimal::ZERO,
+            open_bets: Vec::new(),
         }
     }
 
@@ -610,12 +630,12 @@ impl AgentState {
     }
 
     /// Deduct a cost from the bankroll and track it. Returns false if
-    /// the agent has died (bankroll <= 0).
+    /// the agent has died (bankroll <= survival_threshold).
     pub fn deduct_cost(&mut self, api_cost: Decimal, ib_commission: Decimal) -> bool {
         self.total_api_costs += api_cost;
         self.total_ib_commissions += ib_commission;
         self.bankroll -= api_cost + ib_commission;
-        if self.bankroll <= Decimal::ZERO {
+        if self.bankroll <= self.survival_threshold {
             self.status = AgentStatus::Died;
             false
         } else {
@@ -1107,6 +1127,7 @@ mod tests {
             fill_price: dec!(0.45),
             fees: dec!(0.25),
             timestamp: Utc::now(),
+            currency: "AUD".to_string(),
         };
         assert_eq!(receipt.net_cost(), dec!(5.25));
     }
@@ -1122,10 +1143,12 @@ mod tests {
             fill_price: dec!(0.45),
             fees: dec!(0.25),
             timestamp: Utc::now(),
+            currency: "AUD".to_string(),
         };
         let display = format!("{receipt}");
         assert!(display.contains("YES"));
         assert!(display.contains("forecastex"));
+        assert!(display.contains("AUD"));
     }
 
     #[test]
@@ -1139,11 +1162,13 @@ mod tests {
             fill_price: dec!(0.60),
             fees: Decimal::ZERO,
             timestamp: Utc::now(),
+            currency: "Mana".to_string(),
         };
         let json = serde_json::to_string(&receipt).unwrap();
         let parsed: TradeReceipt = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.order_id, "ORD-002");
         assert_eq!(parsed.side, Side::No);
+        assert_eq!(parsed.currency, "Mana");
     }
 
     // -- Position tests --
