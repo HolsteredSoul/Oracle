@@ -26,6 +26,7 @@ use reqwest::Client;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
+use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -323,10 +324,10 @@ struct TimeRange {
 /// Betfair Exchange platform client.
 pub struct BetfairClient {
     http: Client,
-    app_key: String,
-    session_token: std::sync::RwLock<Option<String>>,
-    username: String,
-    password: String,
+    app_key: Secret<String>,
+    session_token: tokio::sync::RwLock<Option<Secret<String>>>,
+    username: Secret<String>,
+    password: Secret<String>,
 }
 
 impl BetfairClient {
@@ -352,10 +353,10 @@ impl BetfairClient {
 
         Ok(Self {
             http,
-            app_key,
-            session_token: std::sync::RwLock::new(None),
-            username,
-            password,
+            app_key: Secret::new(app_key),
+            session_token: tokio::sync::RwLock::new(None),
+            username: Secret::new(username),
+            password: Secret::new(password),
         })
     }
 
@@ -373,27 +374,51 @@ impl BetfairClient {
 
         Ok(Self {
             http,
-            app_key,
-            session_token: std::sync::RwLock::new(None),
-            username,
-            password,
+            app_key: Secret::new(app_key),
+            session_token: tokio::sync::RwLock::new(None),
+            username: Secret::new(username),
+            password: Secret::new(password),
         })
     }
 
     // -- Authentication ----------------------------------------------------
 
-    /// Authenticate with Betfair SSO and store the session token.
-    async fn login(&self) -> Result<()> {
+    /// Get a valid session token, logging in if necessary.
+    ///
+    /// Uses double-checked locking with a tokio async RwLock to ensure only
+    /// one concurrent caller triggers a login request.
+    async fn ensure_session(&self) -> Result<String> {
+        // Fast path: token already present
+        {
+            let guard = self.session_token.read().await;
+            if let Some(ref token) = *guard {
+                return Ok(token.expose_secret().clone());
+            }
+        }
+        // Slow path: acquire write lock, recheck, then login if still absent
+        let mut guard = self.session_token.write().await;
+        if let Some(ref token) = *guard {
+            return Ok(token.expose_secret().clone());
+        }
+        // Only one caller reaches here — perform login while holding the lock
+        let token = self.fetch_session_token().await?;
+        *guard = Some(Secret::new(token.clone()));
+        info!("Betfair authentication successful");
+        Ok(token)
+    }
+
+    /// Perform the raw HTTP login and return the session token string.
+    async fn fetch_session_token(&self) -> Result<String> {
         info!("Authenticating with Betfair...");
 
         let resp = self
             .http
             .post(AUTH_URL)
-            .header("X-Application", &self.app_key)
+            .header("X-Application", self.app_key.expose_secret().as_str())
             .header("Accept", "application/json")
             .form(&[
-                ("username", self.username.as_str()),
-                ("password", self.password.as_str()),
+                ("username", self.username.expose_secret().as_str()),
+                ("password", self.password.expose_secret().as_str()),
             ])
             .send()
             .await
@@ -414,30 +439,9 @@ impl BetfairClient {
             anyhow::bail!("Betfair login rejected: {}", login.login_status);
         }
 
-        let token = login
+        login
             .session_token
-            .context("Betfair login succeeded but no session token returned")?;
-
-        {
-            let mut guard = self.session_token.write().unwrap();
-            *guard = Some(token);
-        }
-
-        info!("Betfair authentication successful");
-        Ok(())
-    }
-
-    /// Get a valid session token, logging in if necessary.
-    async fn ensure_session(&self) -> Result<String> {
-        {
-            let guard = self.session_token.read().unwrap();
-            if let Some(ref token) = *guard {
-                return Ok(token.clone());
-            }
-        }
-        self.login().await?;
-        let guard = self.session_token.read().unwrap();
-        guard.clone().context("Session token missing after login")
+            .context("Betfair login succeeded but no session token returned")
     }
 
     // -- API helpers -------------------------------------------------------
@@ -456,7 +460,7 @@ impl BetfairClient {
         let resp = self
             .http
             .post(&url)
-            .header("X-Application", &self.app_key)
+            .header("X-Application", self.app_key.expose_secret().as_str())
             .header("X-Authentication", &token)
             .header("Content-Type", "application/json")
             .json(body)
@@ -467,7 +471,7 @@ impl BetfairClient {
         if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
             // Session expired — clear token and retry once
             {
-                let mut guard = self.session_token.write().unwrap();
+                let mut guard = self.session_token.write().await;
                 *guard = None;
             }
             warn!("Betfair session expired, re-authenticating...");
@@ -476,7 +480,7 @@ impl BetfairClient {
             let resp = self
                 .http
                 .post(&url)
-                .header("X-Application", &self.app_key)
+                .header("X-Application", self.app_key.expose_secret().as_str())
                 .header("X-Authentication", &token)
                 .header("Content-Type", "application/json")
                 .json(body)
@@ -519,7 +523,7 @@ impl BetfairClient {
         let resp = self
             .http
             .post(&url)
-            .header("X-Application", &self.app_key)
+            .header("X-Application", self.app_key.expose_secret().as_str())
             .header("X-Authentication", &token)
             .header("Content-Type", "application/json")
             .json(body)

@@ -13,7 +13,7 @@ use axum::{
     Router,
 };
 use std::sync::Arc;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{AllowOrigin, CorsLayer};
 use tracing::info;
 
 use routes::{AppState, DashboardState};
@@ -45,8 +45,13 @@ pub fn spawn_dashboard(state: AppState, port: u16) -> Result<()> {
 
 /// Build the Axum router with all routes and middleware.
 pub fn build_router(state: AppState) -> Router {
+    let allowed_origins = AllowOrigin::list([
+        "http://localhost".parse::<HeaderValue>().unwrap(),
+        "http://127.0.0.1".parse::<HeaderValue>().unwrap(),
+        "http://[::1]".parse::<HeaderValue>().unwrap(),
+    ]);
     let cors = CorsLayer::new()
-        .allow_origin("*".parse::<HeaderValue>().unwrap())
+        .allow_origin(allowed_origins)
         .allow_methods([Method::GET])
         .allow_headers([header::CONTENT_TYPE]);
 

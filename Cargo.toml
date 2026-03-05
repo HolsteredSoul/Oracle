@@ -28,6 +28,7 @@ uuid = { version = "1", features = ["v4"] }
 urlencoding = "2"
 rust_decimal = { version = "1.36", features = ["serde-float"] }
 rust_decimal_macros = "1.36"
+secrecy = "0.8"
 
 [dev-dependencies]
 tokio-test = "0.4"
