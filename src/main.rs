@@ -16,6 +16,7 @@ use oracle::dashboard::spawn_dashboard;
 
 use oracle::config;
 use oracle::engine::accountant::{Accountant, CycleCosts, CycleReport};
+use oracle::engine::auto_exit::{AutoExitConfig, AutoExitEngine, CloseResult};
 use oracle::engine::enricher::Enricher;
 use oracle::engine::executor::Executor;
 use oracle::engine::scanner::MarketRouter;
@@ -250,6 +251,29 @@ async fn main() -> Result<()> {
         };
     let executor = Executor::with_betfair(executor_manifold, executor_betfair, dry_run);
 
+    // Auto-exit engine — create fresh clients (executor took ownership of the first set)
+    let auto_exit_config = AutoExitConfig {
+        enabled: cfg.strategy.enable_auto_exit,
+        take_profit_percent: cfg.strategy.take_profit_percent,
+        stop_loss_percent: cfg.strategy.stop_loss_percent,
+        max_hold_hours: cfg.strategy.max_hold_hours,
+        min_close_stake: cfg.strategy.min_close_stake,
+        dry_run: cfg.strategy.auto_exit_dry_run || dry_run,
+    };
+    let ae_manifold = if cfg.agent.trading_mode == "paper" {
+        let api_key = cfg.platforms.manifold.api_key_env.as_deref()
+            .and_then(|env| std::env::var(env).ok());
+        ManifoldClient::new(api_key).ok()
+    } else {
+        None
+    };
+    let ae_betfair = if cfg.agent.trading_mode == "live" {
+        BetfairClient::new().ok()
+    } else {
+        None
+    };
+    let auto_exit_engine = AutoExitEngine::new(ae_manifold, ae_betfair, auto_exit_config);
+
     // -- Main loop -------------------------------------------------------
 
     let scan_interval = Duration::from_secs(cfg.agent.scan_interval_secs);
@@ -283,6 +307,21 @@ async fn main() -> Result<()> {
                         // Persist updated state after resolutions
                         if let Err(e) = storage::save_state(&state, None) {
                             error!(error = %e, "Failed to save state after resolution");
+                        }
+                    }
+                }
+
+                // Auto-exit: check open positions for take-profit / stop-loss / time limits.
+                if !state.open_bets.is_empty() {
+                    let close_results = auto_exit_engine.check_and_close(&state.open_bets).await;
+                    if !close_results.is_empty() {
+                        process_auto_exits(
+                            &close_results,
+                            &mut state,
+                            &dashboard_state,
+                        ).await;
+                        if let Err(e) = storage::save_state(&state, None) {
+                            error!(error = %e, "Failed to save state after auto-exit");
                         }
                     }
                 }
@@ -483,6 +522,8 @@ async fn update_dashboard(dash: &AppState, state: &AgentState, report: &CycleRep
                 currency: t.receipt.currency.clone(),
                 edge_pct: t.edge_pct,
                 confidence: t.confidence,
+                close_reason: None,
+                final_pnl: None,
             });
         }
         if trades.len() > 200 {
@@ -502,6 +543,54 @@ async fn update_dashboard(dash: &AppState, state: &AgentState, report: &CycleRep
             let excess = history.len() - 500;
             history.drain(0..excess);
         }
+    }
+}
+
+/// Process auto-exit close results: update state, record P&L, and push to dashboard.
+async fn process_auto_exits(
+    results: &[CloseResult],
+    state: &mut oracle::types::AgentState,
+    dash: &AppState,
+) {
+    let mut closed_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for result in results {
+        if !result.success {
+            continue;
+        }
+
+        // Record the closed position's P&L in agent state
+        let won = result.realized_pnl >= Decimal::ZERO;
+        state.record_resolution(result.realized_pnl, won);
+        closed_ids.insert(result.bet_id.clone());
+
+        // Push a "closed" trade entry to the dashboard
+        {
+            let mut trades = dash.recent_trades.write().await;
+            trades.push(TradeLogEntry {
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                market_id: result.market_id.clone(),
+                platform: format!("{}-closed", result.platform),
+                side: "CLOSE".to_string(),
+                amount: result.realized_pnl.to_f64().unwrap_or(0.0),
+                currency: if result.platform == "betfair" { "AUD".to_string() } else { "Mana".to_string() },
+                edge_pct: 0.0,
+                confidence: 0.0,
+                close_reason: Some(result.reason.to_string()),
+                final_pnl: Some(result.realized_pnl.to_f64().unwrap_or(0.0)),
+            });
+            if trades.len() > 200 {
+                let excess = trades.len() - 200;
+                trades.drain(0..excess);
+            }
+        }
+    }
+
+    // Remove successfully closed bets from open_bets
+    if !closed_ids.is_empty() {
+        state.open_bets.retain(|b| !closed_ids.contains(&b.order_id));
+        // Mirror updated state to dashboard
+        *dash.agent.write().await = state.clone();
     }
 }
 

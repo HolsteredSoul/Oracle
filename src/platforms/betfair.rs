@@ -783,6 +783,65 @@ impl BetfairClient {
 }
 
 // ---------------------------------------------------------------------------
+// Auto-exit helpers (non-trait, public methods)
+// ---------------------------------------------------------------------------
+
+impl BetfairClient {
+    /// Get the current best available back price (decimal odds) for the
+    /// favourite runner in a market. Used by the auto-exit engine to compute
+    /// unrealized P&L on open positions.
+    ///
+    /// Returns `None` if the market has no active runners or no back offers.
+    pub async fn get_best_back_odds(&self, market_id: &str) -> Result<Option<Decimal>> {
+        let books = self.fetch_market_books(&[market_id.to_string()]).await?;
+        let book = match books.first() {
+            Some(b) => b,
+            None => return Ok(None),
+        };
+
+        let mut best_back: Option<f64> = None;
+        for runner in &book.runners {
+            if runner.status.as_deref() != Some("ACTIVE") && runner.status.is_some() {
+                continue;
+            }
+            if let Some(ref ex) = runner.ex {
+                if let Some(back) = ex.available_to_back.first() {
+                    if best_back.is_none() || back.price < best_back.unwrap() {
+                        best_back = Some(back.price);
+                    }
+                }
+            }
+        }
+
+        Ok(best_back.map(d))
+    }
+
+    /// Get the total AUD liquidity available on the lay side for a market.
+    ///
+    /// The auto-exit engine requires available lay liquidity of at least 80%
+    /// of the closing stake before placing a hedge bet, preventing partial
+    /// fills that would leave an unbalanced position.
+    pub async fn get_available_liquidity(&self, market_id: &str) -> Result<Decimal> {
+        let books = self.fetch_market_books(&[market_id.to_string()]).await?;
+        let book = match books.first() {
+            Some(b) => b,
+            None => return Ok(Decimal::ZERO),
+        };
+
+        let total_lay: f64 = book
+            .runners
+            .iter()
+            .filter(|r| r.status.as_deref() != Some("REMOVED"))
+            .filter_map(|r| r.ex.as_ref())
+            .flat_map(|ex| &ex.available_to_lay)
+            .map(|p| p.size)
+            .sum();
+
+        Ok(d(total_lay))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // PredictionPlatform trait implementation
 // ---------------------------------------------------------------------------
 

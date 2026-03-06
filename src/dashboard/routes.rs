@@ -130,6 +130,11 @@ pub struct TradeLogEntry {
     pub currency: String,
     pub edge_pct: f64,
     pub confidence: f64,
+    /// Set when this entry records an auto-close event.
+    /// Values: "TakeProfit", "StopLoss", "MaxHoldTime", or null for open positions.
+    pub close_reason: Option<String>,
+    /// Realized P&L in platform currency when auto-closed. Null for open positions.
+    pub final_pnl: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
