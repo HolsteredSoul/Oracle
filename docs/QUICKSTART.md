@@ -148,6 +148,29 @@ The default `config.toml` ships with sensible defaults for trial mode. Key setti
 | `risk.max_bet_pct` | `0.06` | Max 6% of bankroll per bet |
 | `dashboard.port` | `8080` | Web dashboard port |
 
+#### Auto-Exit / Position Management
+
+ORACLE automatically closes open positions that hit profit or loss targets. Defaults are conservative — adjust in the `[strategy]` section of `config.toml`:
+
+```toml
+[strategy]
+enable_auto_exit     = true   # Set to false to disable all auto-closes
+take_profit_percent  = 15.0   # Close when P&L reaches +15%
+stop_loss_percent    = -10.0  # Close when P&L reaches -10%
+max_hold_hours       = 48     # Force-close after 48 hours regardless of P&L
+min_close_stake      = 2.0    # Betfair: minimum hedge stake in AUD (exchange min is $1; $2 is safety buffer)
+auto_exit_dry_run    = false  # true = log what would be closed without actually closing
+```
+
+How it works per platform:
+
+| Platform | Close Mechanism |
+|----------|----------------|
+| **Manifold** (paper) | Sells all shares via `/v0/market/{id}/sell` |
+| **Betfair** (live) | Places a hedge bet at current odds to green-up the position |
+
+The dashboard "Recent Trades & Auto-Exits" table shows a **Status** badge (OPEN / TAKE PROFIT / STOP LOSS / TIME LIMIT) and **P&L** column for every position. The "Auto-Exits" stats card shows the cumulative breakdown.
+
 You can leave `config.toml` as-is for your first run.
 
 ---
@@ -388,9 +411,14 @@ Open `http://localhost:8080` (or your server's IP) to access the live dashboard.
 The dashboard displays:
 
 - **Status** — ALIVE / DIED / PAUSED with current bankroll
-- **Performance** — P&L, win rate, Sharpe ratio, trade history
-- **Activity** — Balance history chart, recent cycles, recent trades
+- **Performance** — P&L, win rate, drawdown from peak, trade history
+- **Auto-Exits** — count of take-profit / stop-loss / time-limit closures
+- **Activity** — Balance history chart, recent cycles, Recent Trades & Auto-Exits table
 - **Costs** — Cumulative LLM/data/commission costs and burn rate
+
+The **Recent Trades & Auto-Exits** table shows each position with:
+- **Status badge** — OPEN (blue), TAKE PROFIT (green), STOP LOSS (red), TIME LIMIT (teal)
+- **P&L column** — realized profit or loss for closed positions
 
 It auto-refreshes every 30 seconds.
 
@@ -456,6 +484,22 @@ mispricing_threshold = 0.06    # Lower = more sensitive (but noisier)
 - Switch to a cheaper primary model: `model = "x-ai/grok-4.1-fast"`
 - Use a cheaper Claude variant: `model = "anthropic/claude-haiku-4"`
 
+### Auto-exits not triggering
+
+- Verify `enable_auto_exit = true` in `config.toml` under `[strategy]`.
+- Check `auto_exit_dry_run` — if `true`, closes are only logged, not executed.
+- For Betfair: the hedge stake must be ≥ `min_close_stake` (default $2.00 AUD) and at least 80% of that must be available as lay liquidity. If liquidity is thin the close is skipped and retried next cycle.
+- Enable debug logging to see close decisions: `RUST_LOG=oracle=debug`.
+
+### Auto-exits firing too aggressively
+
+Widen the thresholds in `[strategy]`:
+```toml
+take_profit_percent = 25.0    # Require +25% before closing
+stop_loss_percent   = -20.0   # Allow up to -20% before cutting
+max_hold_hours      = 96      # Hold up to 4 days
+```
+
 ### Agent died (bankroll reached $0)
 
 The agent halts when operational costs exceed its bankroll. Options:
@@ -476,4 +520,4 @@ docker run -d --env-file .env -p 8080:8080 oracle
 
 ---
 
-*ORACLE Quick Start Guide — February 2026*
+*ORACLE Quick Start Guide — March 2026*

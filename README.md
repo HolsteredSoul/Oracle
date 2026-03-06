@@ -122,7 +122,8 @@ oracle/
 │   │   ├── scanner.rs      # Multi-platform market scanner
 │   │   ├── enricher.rs     # Data enrichment pipeline
 │   │   ├── executor.rs     # Trade execution
-│   │   └── accountant.rs   # Cost tracking + survival
+│   │   ├── accountant.rs   # Cost tracking + survival
+│   │   └── auto_exit.rs    # Auto-close engine (take-profit / stop-loss)
 │   ├── storage/            # Persistence
 │   │   └── mod.rs          # JSON state persistence
 │   ├── dashboard/          # Monitoring
@@ -157,9 +158,10 @@ oracle/
 | 7 | Dashboard & Monitoring | Complete | 18 |
 | 8 | Calibration & Backtesting | Complete | 19 |
 | 9 | Betfair Exchange adapter | Complete | 15 |
+| 10 | Auto-Exit Engine (take-profit / stop-loss / time-limit) | Complete | 8 |
 | — | IBKR ForecastTrader adapter | Planned | — |
 
-**Total tests passing: 313**
+**Total tests passing: 321**
 
 ## Documentation
 
@@ -177,6 +179,7 @@ Key config sections:
 - `[llm]` — provider (`"openrouter"` | `"anthropic"`), model, fallback model, token limits
 - `[platforms.*]` — Manifold, Metaculus, Betfair, IBKR (planned)
 - `[risk]` — thresholds, Kelly multiplier, exposure limits
+- `[strategy]` — auto-exit controls (take-profit %, stop-loss %, max hold hours, min close stake)
 - `[data_sources]` — weather, sports, economics API keys
 - `[dashboard]` — web UI port
 - `[alerts]` — Telegram notifications
@@ -187,4 +190,4 @@ Proprietary. All rights reserved.
 
 ---
 
-*ORACLE v0.1.0 — February 2026*
+*ORACLE v0.1.0 — March 2026*

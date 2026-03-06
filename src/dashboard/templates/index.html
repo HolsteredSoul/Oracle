@@ -17,6 +17,7 @@
             --orange: #ffab40;
             --blue: #448aff;
             --purple: #b388ff;
+            --teal: #26c6da;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -35,97 +36,72 @@
             flex-wrap: wrap;
             gap: 12px;
         }
-        .header h1 {
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: 2px;
-        }
+        .header h1 { font-size: 20px; font-weight: 700; letter-spacing: 2px; }
         .header h1 span { color: var(--orange); }
         .status-badge {
-            padding: 6px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-            letter-spacing: 1px;
+            padding: 6px 16px; border-radius: 20px;
+            font-size: 13px; font-weight: 600; letter-spacing: 1px;
         }
-        .status-alive { background: rgba(0,230,118,0.15); color: var(--green); border: 1px solid var(--green); }
-        .status-died { background: rgba(255,82,82,0.15); color: var(--red); border: 1px solid var(--red); }
+        .status-alive  { background: rgba(0,230,118,0.15); color: var(--green);  border: 1px solid var(--green); }
+        .status-died   { background: rgba(255,82,82,0.15);  color: var(--red);    border: 1px solid var(--red); }
         .status-paused { background: rgba(255,171,64,0.15); color: var(--orange); border: 1px solid var(--orange); }
         .mode-badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; letter-spacing: 1px; }
-        .mode-paper { background: rgba(68,138,255,0.15); color: var(--blue); border: 1px solid var(--blue); }
-        .mode-live  { background: rgba(255,82,82,0.15); color: var(--red); border: 1px solid var(--red); }
-        .mode-dry   { background: rgba(136,136,136,0.15); color: var(--dim); border: 1px solid var(--dim); }
+        .mode-paper { background: rgba(68,138,255,0.15); color: var(--blue);   border: 1px solid var(--blue); }
+        .mode-live  { background: rgba(255,82,82,0.15);  color: var(--red);    border: 1px solid var(--red); }
+        .mode-dry   { background: rgba(136,136,136,0.15); color: var(--dim);   border: 1px solid var(--dim); }
         .refresh-info { color: var(--dim); font-size: 12px; }
-        .model-info { color: var(--purple); font-size: 11px; letter-spacing: 0.5px; opacity: 0.8; }
+        .model-info   { color: var(--purple); font-size: 11px; letter-spacing: 0.5px; opacity: 0.8; }
 
         /* Progress banner */
         .progress-banner {
             background: var(--surface);
             border-bottom: 1px solid var(--border);
             padding: 10px 24px;
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            font-size: 13px;
+            display: flex; align-items: center; gap: 16px; font-size: 13px;
         }
         .progress-phase {
-            color: var(--orange);
-            font-weight: 700;
-            letter-spacing: 1px;
-            min-width: 120px;
+            color: var(--orange); font-weight: 700; letter-spacing: 1px; min-width: 140px;
         }
-        .progress-phase::before {
-            content: '▶ ';
-            animation: pulse 1s ease-in-out infinite;
-        }
+        .progress-phase::before { content: '▶ '; animation: pulse 1s ease-in-out infinite; }
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         .progress-detail { color: var(--dim); }
+        .phase-autoexit { color: var(--teal) !important; }
 
+        /* Stats grid */
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 12px;
-            padding: 16px 24px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px; padding: 16px 24px;
         }
         .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 8px; padding: 16px;
         }
         .card-label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
         .card-value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
-        .card-sub { color: var(--dim); font-size: 12px; margin-top: 4px; }
+        .card-sub   { color: var(--dim); font-size: 12px; margin-top: 4px; }
         .positive { color: var(--green); }
         .negative { color: var(--red); }
+        .neutral  { color: var(--teal); }
 
-        .chart-section {
-            padding: 0 24px 16px;
-        }
+        /* Chart */
+        .chart-section { padding: 0 24px 16px; }
         .chart-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 8px; padding: 16px;
         }
         .chart-card h3 { font-size: 14px; color: var(--dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
         .chart-container { position: relative; height: 250px; }
 
+        /* Tables */
         .tables-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            padding: 0 24px 16px;
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 12px; padding: 0 24px 16px;
         }
-        @media (max-width: 900px) {
-            .tables-grid { grid-template-columns: 1fr; }
-        }
+        @media (max-width: 900px) { .tables-grid { grid-template-columns: 1fr; } }
         .table-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            overflow-x: auto;
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 8px; padding: 16px; overflow-x: auto;
         }
         .table-card h3 { font-size: 14px; color: var(--dim); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -135,251 +111,425 @@
         .empty-msg { color: var(--dim); font-style: italic; padding: 16px 0; }
         .error-msg { color: var(--red); }
         .errors-section { padding: 0 24px 24px; }
+
+        /* Auto-exit / status badges in trades table */
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; font-weight: 600; letter-spacing: 0.5px; white-space: nowrap;
+        }
+        .badge-tp   { background: rgba(0,230,118,0.15); color: var(--green);  border: 1px solid var(--green); }
+        .badge-sl   { background: rgba(255,82,82,0.15);  color: var(--red);    border: 1px solid var(--red); }
+        .badge-time { background: rgba(38,198,218,0.15); color: var(--teal);   border: 1px solid var(--teal); }
+        .badge-open { background: rgba(68,138,255,0.10); color: var(--blue);   border: 1px solid rgba(68,138,255,0.35); }
+
+        /* Slightly muted rows for closed positions */
+        tr.row-closed td { opacity: 0.82; }
+        tr.row-closed:hover td { opacity: 1; }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1><span>ORACLE</span> Dashboard</h1>
-        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-            <span id="model-info" class="model-info"></span>
-            <span id="mode-badge" class="mode-badge mode-dry">—</span>
-            <span id="status-badge" class="status-badge status-alive">LOADING...</span>
-            <span class="refresh-info">Auto-refresh: <span id="countdown">30</span>s</span>
-        </div>
+
+<div class="header">
+    <h1><span>ORACLE</span> Dashboard</h1>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span id="model-info" class="model-info"></span>
+        <span id="mode-badge" class="mode-badge mode-dry">—</span>
+        <span id="status-badge" class="status-badge status-alive">LOADING...</span>
+        <span class="refresh-info">Auto-refresh: <span id="countdown">30</span>s</span>
+    </div>
+</div>
+
+<!-- Live cycle progress (hidden when idle) -->
+<div id="progress-banner" class="progress-banner" style="display:none;">
+    <span id="progress-phase" class="progress-phase"></span>
+    <span id="progress-detail" class="progress-detail"></span>
+</div>
+
+<!-- Stats cards -->
+<div class="grid">
+    <div class="card">
+        <div class="card-label">Bankroll</div>
+        <div class="card-value" id="bankroll">$—</div>
+        <div class="card-sub" id="bankroll-sub"></div>
+    </div>
+    <div class="card">
+        <div class="card-label">Total P&amp;L</div>
+        <div class="card-value" id="pnl">$—</div>
+        <div class="card-sub" id="pnl-sub"></div>
+    </div>
+    <div class="card">
+        <div class="card-label">Win Rate</div>
+        <div class="card-value" id="winrate">—%</div>
+        <div class="card-sub" id="winrate-sub"></div>
+    </div>
+    <div class="card">
+        <div class="card-label">Trades</div>
+        <div class="card-value" id="trades">—</div>
+        <div class="card-sub" id="trades-sub"></div>
+    </div>
+    <div class="card">
+        <div class="card-label">Auto-Exits</div>
+        <div class="card-value neutral" id="auto-exits">—</div>
+        <div class="card-sub" id="auto-exits-sub">TP / SL / Time</div>
+    </div>
+    <div class="card">
+        <div class="card-label">Cycles</div>
+        <div class="card-value" id="cycles">—</div>
+        <div class="card-sub" id="cycles-sub"></div>
+    </div>
+    <div class="card">
+        <div class="card-label">Total Costs</div>
+        <div class="card-value" id="costs">$—</div>
+        <div class="card-sub" id="costs-sub"></div>
+    </div>
+</div>
+
+<!-- Balance chart -->
+<div class="chart-section">
+    <div class="chart-card">
+        <h3>Balance History</h3>
+        <div class="chart-container"><canvas id="balanceChart"></canvas></div>
+    </div>
+</div>
+
+<!-- Recent Cycles | Recent Trades & Auto-Exits -->
+<div class="tables-grid">
+    <div class="table-card">
+        <h3>Recent Cycles</h3>
+        <table>
+            <thead>
+                <tr><th>#</th><th>Scanned</th><th>Edges</th><th>Bets</th><th>Cost</th><th>Balance</th></tr>
+            </thead>
+            <tbody id="cycles-table">
+                <tr><td colspan="6" class="empty-msg">No cycles yet</td></tr>
+            </tbody>
+        </table>
     </div>
 
-    <!-- Live cycle progress (hidden when idle) -->
-    <div id="progress-banner" class="progress-banner" style="display:none;">
-        <span id="progress-phase" class="progress-phase"></span>
-        <span id="progress-detail" class="progress-detail"></span>
+    <div class="table-card">
+        <h3>Recent Trades &amp; Auto-Exits</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Platform</th>
+                    <th>Market</th>
+                    <th>Side</th>
+                    <th>Amount</th>
+                    <th>Edge</th>
+                    <th>Status</th>
+                    <th>P&amp;L</th>
+                </tr>
+            </thead>
+            <tbody id="trades-table">
+                <tr><td colspan="7" class="empty-msg">No trades yet</td></tr>
+            </tbody>
+        </table>
     </div>
+</div>
 
-    <div class="grid" id="stats-grid">
-        <div class="card"><div class="card-label">Bankroll</div><div class="card-value" id="bankroll">$—</div><div class="card-sub" id="bankroll-sub"></div></div>
-        <div class="card"><div class="card-label">P&L</div><div class="card-value" id="pnl">$—</div><div class="card-sub" id="pnl-sub"></div></div>
-        <div class="card"><div class="card-label">Win Rate</div><div class="card-value" id="winrate">—%</div><div class="card-sub" id="winrate-sub"></div></div>
-        <div class="card"><div class="card-label">Trades</div><div class="card-value" id="trades">—</div><div class="card-sub" id="trades-sub"></div></div>
-        <div class="card"><div class="card-label">Cycles</div><div class="card-value" id="cycles">—</div><div class="card-sub" id="cycles-sub"></div></div>
-        <div class="card"><div class="card-label">Total Costs</div><div class="card-value" id="costs">$—</div><div class="card-sub" id="costs-sub"></div></div>
+<!-- Error log -->
+<div class="errors-section" id="errors-section" style="display:none;">
+    <div class="table-card">
+        <h3 style="color:var(--red);">Error Log <span id="error-count"></span></h3>
+        <table>
+            <thead><tr><th>Time</th><th>Cycle</th><th>Error</th></tr></thead>
+            <tbody id="errors-table"></tbody>
+        </table>
     </div>
+</div>
 
-    <div class="chart-section">
-        <div class="chart-card">
-            <h3>Balance History</h3>
-            <div class="chart-container"><canvas id="balanceChart"></canvas></div>
-        </div>
-    </div>
+<script>
+    const API = window.location.origin;
+    let balanceChart  = null;
+    let countdownVal  = 30;
+    let progressCountdown = 5;
 
-    <div class="tables-grid">
-        <div class="table-card">
-            <h3>Recent Cycles</h3>
-            <table>
-                <thead><tr><th>#</th><th>Scanned</th><th>Edges</th><th>Bets</th><th>Cost</th><th>Balance</th></tr></thead>
-                <tbody id="cycles-table"><tr><td colspan="6" class="empty-msg">No cycles yet</td></tr></tbody>
-            </table>
-        </div>
-        <div class="table-card">
-            <h3>Recent Trades</h3>
-            <table>
-                <thead><tr><th>Platform</th><th>Market</th><th>Side</th><th>Amount</th><th>Edge</th><th>Conf</th></tr></thead>
-                <tbody id="trades-table"><tr><td colspan="6" class="empty-msg">No trades yet</td></tr></tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- Error log (shown only when errors exist) -->
-    <div class="errors-section" id="errors-section" style="display:none;">
-        <div class="table-card">
-            <h3 style="color:var(--red);">Error Log <span id="error-count"></span></h3>
-            <table>
-                <thead><tr><th>Time</th><th>Cycle</th><th>Error</th></tr></thead>
-                <tbody id="errors-table"></tbody>
-            </table>
-        </div>
-    </div>
-
-    <script>
-        const API = window.location.origin;
-        let balanceChart = null;
-        let countdownVal = 30;
-        let progressCountdown = 5;
-
-        // Balance chart
-        function initChart() {
-            const ctx = document.getElementById('balanceChart').getContext('2d');
-            balanceChart = new Chart(ctx, {
-                type: 'line',
-                data: { labels: [], datasets: [{ label: 'Bankroll ($)', data: [], borderColor: '#ffab40', backgroundColor: 'rgba(255,171,64,0.08)', fill: true, tension: 0.3, pointRadius: 2 }] },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#1e1e2e' } },
-                        y: { ticks: { color: '#888', callback: v => '$'+v }, grid: { color: '#1e1e2e' } }
-                    }
+    // ----------------------------------------------------------------
+    // Balance chart
+    // ----------------------------------------------------------------
+    function initChart() {
+        const ctx = document.getElementById('balanceChart').getContext('2d');
+        balanceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Bankroll ($)',
+                    data: [],
+                    borderColor: '#ffab40',
+                    backgroundColor: 'rgba(255,171,64,0.08)',
+                    fill: true, tension: 0.3, pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#1e1e2e' } },
+                    y: { ticks: { color: '#888', callback: v => '$' + v }, grid: { color: '#1e1e2e' } }
                 }
-            });
-        }
-
-        function updateChart(data) {
-            if (!balanceChart) return;
-            balanceChart.data.labels = data.map(p => {
-                const d = new Date(p.timestamp);
-                return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-            });
-            balanceChart.data.datasets[0].data = data.map(p => p.bankroll);
-            balanceChart.update('none');
-        }
-
-        // Fetch and update
-        async function fetchData() {
-            try {
-                const [statusR, cyclesR, historyR, tradesR] = await Promise.all([
-                    fetch(API+'/api/status').then(r=>r.json()),
-                    fetch(API+'/api/cycles').then(r=>r.json()),
-                    fetch(API+'/api/balance-history').then(r=>r.json()),
-                    fetch(API+'/api/trades').then(r=>r.json()),
-                ]);
-                updateStatus(statusR);
-                updateCycles(cyclesR);
-                updateChart(historyR);
-                updateTrades(tradesR);
-            } catch(e) {
-                console.error('Fetch error:', e);
             }
+        });
+    }
+
+    function updateChart(data) {
+        if (!balanceChart) return;
+        balanceChart.data.labels = data.map(p => {
+            const d = new Date(p.timestamp);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        });
+        balanceChart.data.datasets[0].data = data.map(p => p.bankroll);
+        balanceChart.update('none');
+    }
+
+    // ----------------------------------------------------------------
+    // Fetch
+    // ----------------------------------------------------------------
+    async function fetchData() {
+        try {
+            const [statusR, cyclesR, historyR, tradesR] = await Promise.all([
+                fetch(API + '/api/status').then(r => r.json()),
+                fetch(API + '/api/cycles').then(r => r.json()),
+                fetch(API + '/api/balance-history').then(r => r.json()),
+                fetch(API + '/api/trades').then(r => r.json()),
+            ]);
+            updateStatus(statusR);
+            updateCycles(cyclesR);
+            updateChart(historyR);
+            updateTrades(tradesR);
+        } catch (e) { console.error('Fetch error:', e); }
+    }
+
+    async function fetchProgress() {
+        try {
+            const data = await fetch(API + '/api/progress').then(r => r.json());
+            updateProgress(data);
+        } catch (e) { /* non-critical */ }
+    }
+
+    async function fetchErrors() {
+        try {
+            const errs = await fetch(API + '/api/errors').then(r => r.json());
+            updateErrors(errs);
+        } catch (e) { /* non-critical */ }
+    }
+
+    // ----------------------------------------------------------------
+    // Status panel
+    // ----------------------------------------------------------------
+    function updateStatus(s) {
+        const badge = document.getElementById('status-badge');
+        if (s.status.includes('ALIVE'))     { badge.className = 'status-badge status-alive';  badge.textContent = 'ALIVE'; }
+        else if (s.status.includes('DIED')) { badge.className = 'status-badge status-died';   badge.textContent = 'DIED'; }
+        else                                 { badge.className = 'status-badge status-paused'; badge.textContent = 'PAUSED'; }
+
+        const modeBadge = document.getElementById('mode-badge');
+        const mode = (s.trading_mode || 'dry').toLowerCase();
+        modeBadge.textContent = mode.toUpperCase();
+        modeBadge.className = 'mode-badge mode-' + mode;
+
+        document.getElementById('bankroll').textContent = '$' + s.bankroll.toFixed(2);
+        document.getElementById('bankroll-sub').textContent = 'Peak: $' + s.peak_bankroll.toFixed(2);
+
+        const pnlEl = document.getElementById('pnl');
+        pnlEl.textContent = (s.total_pnl >= 0 ? '+$' : '-$') + Math.abs(s.total_pnl).toFixed(2);
+        pnlEl.className = 'card-value ' + (s.total_pnl >= 0 ? 'positive' : 'negative');
+
+        const drawdown = s.peak_bankroll > 0
+            ? ((s.bankroll - s.peak_bankroll) / s.peak_bankroll * 100)
+            : 0;
+        document.getElementById('pnl-sub').textContent = drawdown < 0
+            ? 'Drawdown: ' + drawdown.toFixed(1) + '%'
+            : 'All-time high';
+
+        document.getElementById('winrate').textContent = (s.win_rate * 100).toFixed(1) + '%';
+        document.getElementById('winrate-sub').textContent = s.trades_won + 'W / ' + s.trades_lost + 'L';
+
+        document.getElementById('trades').textContent = s.trades_placed;
+        const hrs  = Math.floor(s.uptime_secs / 3600);
+        const mins = Math.floor((s.uptime_secs % 3600) / 60);
+        document.getElementById('trades-sub').textContent = 'Uptime: ' + hrs + 'h ' + mins + 'm';
+
+        document.getElementById('cycles').textContent = s.cycle_count;
+        document.getElementById('costs').textContent  = '$' + s.total_costs.toFixed(4);
+        document.getElementById('costs-sub').textContent =
+            'API: $' + s.total_api_costs.toFixed(4) + ' | Comm: $' + s.total_ib_commissions.toFixed(2);
+    }
+
+    // ----------------------------------------------------------------
+    // Progress banner
+    // ----------------------------------------------------------------
+    function updateProgress(data) {
+        const banner   = document.getElementById('progress-banner');
+        const phaseEl  = document.getElementById('progress-phase');
+        const detailEl = document.getElementById('progress-detail');
+        const modelEl  = document.getElementById('model-info');
+
+        if (data.model) modelEl.textContent = data.model;
+
+        const s = data.progress.state;
+        if (s === 'idle') { banner.style.display = 'none'; return; }
+        banner.style.display = 'flex';
+
+        const labels = {
+            scanning:    'SCANNING',
+            enriching:   'ENRICHING',
+            estimating:  'ESTIMATING',
+            selecting:   'SELECTING',
+            executing:   'EXECUTING',
+            reconciling: 'RECONCILING',
+        };
+        phaseEl.textContent = labels[s] || s.replace('_', ' ').toUpperCase();
+        phaseEl.className   = 'progress-phase';
+
+        if (s === 'estimating') {
+            const done  = data.progress.markets_done  || 0;
+            const total = data.progress.markets_total || 0;
+            detailEl.textContent = done < total
+                ? total + ' markets — evaluating...'
+                : total + ' markets evaluated';
+        } else if (s === 'enriching') {
+            detailEl.textContent = (data.progress.markets_total || 0) + ' markets';
+        } else if (s === 'executing') {
+            const n = data.progress.bets_total || 0;
+            detailEl.textContent = n === 0 ? 'no bets this cycle' : n + ' bet' + (n === 1 ? '' : 's');
+        } else {
+            detailEl.textContent = '';
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Error log
+    // ----------------------------------------------------------------
+    function updateErrors(errors) {
+        const section = document.getElementById('errors-section');
+        if (!errors.length) { section.style.display = 'none'; return; }
+        section.style.display = 'block';
+        document.getElementById('error-count').textContent = '(' + errors.length + ')';
+        const recent = errors.slice().reverse().slice(0, 10);
+        document.getElementById('errors-table').innerHTML = recent.map(e => {
+            const t   = new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const msg = e.error.length > 100 ? e.error.substring(0, 100) + '…' : e.error;
+            return `<tr><td>${t}</td><td>${e.cycle_number}</td><td class="error-msg" title="${e.error}">${msg}</td></tr>`;
+        }).join('');
+    }
+
+    // ----------------------------------------------------------------
+    // Cycles table
+    // ----------------------------------------------------------------
+    function updateCycles(cycles) {
+        const tbody = document.getElementById('cycles-table');
+        if (!cycles.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No cycles yet</td></tr>';
+            return;
+        }
+        const recent = cycles.slice(-15).reverse();
+        tbody.innerHTML = recent.map(c =>
+            `<tr>
+                <td>${c.cycle_number}</td>
+                <td>${c.markets_scanned}</td>
+                <td>${c.edges_found}</td>
+                <td>${c.bets_placed}</td>
+                <td>$${c.cycle_cost.toFixed(4)}</td>
+                <td>$${c.bankroll_after.toFixed(2)}</td>
+            </tr>`
+        ).join('');
+    }
+
+    // ----------------------------------------------------------------
+    // Trades + Auto-exits table
+    // ----------------------------------------------------------------
+
+    function reasonBadge(reason) {
+        if (!reason) return '<span class="badge badge-open">OPEN</span>';
+        switch (reason) {
+            case 'TakeProfit':  return '<span class="badge badge-tp">TAKE PROFIT</span>';
+            case 'StopLoss':    return '<span class="badge badge-sl">STOP LOSS</span>';
+            case 'MaxHoldTime': return '<span class="badge badge-time">TIME LIMIT</span>';
+            default:            return `<span class="badge">${reason}</span>`;
+        }
+    }
+
+    function pnlCell(finalPnl, currency) {
+        if (finalPnl === null || finalPnl === undefined) return '<td style="color:var(--dim)">—</td>';
+        const isMana   = currency === 'Mana';
+        const prefix   = isMana ? '\u24C2' : '$';
+        const absVal   = Math.abs(finalPnl).toFixed(isMana ? 0 : 2);
+        const sign     = finalPnl >= 0 ? '+' : '-';
+        const cls      = finalPnl >= 0 ? 'positive' : 'negative';
+        return `<td class="${cls}">${sign}${prefix}${absVal}</td>`;
+    }
+
+    function updateTrades(trades) {
+        const tbody = document.getElementById('trades-table');
+
+        if (!trades.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No trades yet</td></tr>';
+            document.getElementById('auto-exits').textContent    = '0';
+            document.getElementById('auto-exits-sub').textContent = '0 TP / 0 SL / 0 Time';
+            return;
         }
 
-        async function fetchProgress() {
-            try {
-                const data = await fetch(API+'/api/progress').then(r=>r.json());
-                updateProgress(data);
-            } catch(e) { /* non-critical */ }
-        }
+        // Count auto-exit events across all trades in the log
+        let tp = 0, sl = 0, timeLimit = 0;
+        trades.forEach(t => {
+            if (t.close_reason === 'TakeProfit')  tp++;
+            if (t.close_reason === 'StopLoss')    sl++;
+            if (t.close_reason === 'MaxHoldTime') timeLimit++;
+        });
+        const totalExits = tp + sl + timeLimit;
+        document.getElementById('auto-exits').textContent    = totalExits;
+        document.getElementById('auto-exits-sub').textContent = `${tp} TP / ${sl} SL / ${timeLimit} Time`;
 
-        async function fetchErrors() {
-            try {
-                const errs = await fetch(API+'/api/errors').then(r=>r.json());
-                updateErrors(errs);
-            } catch(e) { /* non-critical */ }
-        }
+        // Display the 20 most recent entries, newest first
+        const recent = trades.slice(-20).reverse();
+        tbody.innerHTML = recent.map(t => {
+            const isMana    = t.currency === 'Mana';
+            const isClosed  = !!t.close_reason;
+            const rowClass  = isClosed ? 'row-closed' : '';
 
-        function updateStatus(s) {
-            const badge = document.getElementById('status-badge');
-            if (s.status.includes('ALIVE')) { badge.className = 'status-badge status-alive'; badge.textContent = 'ALIVE'; }
-            else if (s.status.includes('DIED')) { badge.className = 'status-badge status-died'; badge.textContent = 'DIED'; }
-            else { badge.className = 'status-badge status-paused'; badge.textContent = 'PAUSED'; }
+            // Amount: show absolute value (for close rows amount is the P&L delta stored separately)
+            const amtPrefix = isMana ? '\u24C2' : '$';
+            const amtAbs    = Math.abs(t.amount);
+            const amtStr    = isMana ? amtPrefix + amtAbs.toFixed(0) : amtPrefix + amtAbs.toFixed(2);
 
-            const modeBadge = document.getElementById('mode-badge');
-            const mode = (s.trading_mode || 'dry').toLowerCase();
-            modeBadge.textContent = mode.toUpperCase();
-            modeBadge.className = 'mode-badge mode-' + mode;
+            // Strip "-closed" suffix added by process_auto_exits for display
+            const platformDisplay = (t.platform || '').replace(/-closed$/, '');
 
-            document.getElementById('bankroll').textContent = '$' + s.bankroll.toFixed(2);
-            document.getElementById('bankroll-sub').textContent = 'Peak: $' + s.peak_bankroll.toFixed(2);
+            // Edge: hide for auto-close rows (they record 0)
+            const edgeStr = (isClosed || t.edge_pct === 0) ? '—' : t.edge_pct.toFixed(1) + '%';
 
-            const pnlEl = document.getElementById('pnl');
-            pnlEl.textContent = (s.total_pnl >= 0 ? '+$' : '-$') + Math.abs(s.total_pnl).toFixed(2);
-            pnlEl.className = 'card-value ' + (s.total_pnl >= 0 ? 'positive' : 'negative');
+            const marketShort = (t.market_id || '').substring(0, 10) + '…';
 
-            document.getElementById('winrate').textContent = (s.win_rate * 100).toFixed(1) + '%';
-            document.getElementById('winrate-sub').textContent = s.trades_won + 'W / ' + s.trades_lost + 'L';
+            return `<tr class="${rowClass}">
+                <td>${platformDisplay || '—'}</td>
+                <td title="${t.market_id}">${marketShort}</td>
+                <td>${t.side}</td>
+                <td>${amtStr}</td>
+                <td>${edgeStr}</td>
+                <td>${reasonBadge(t.close_reason)}</td>
+                ${pnlCell(t.final_pnl, t.currency)}
+            </tr>`;
+        }).join('');
+    }
 
-            document.getElementById('trades').textContent = s.trades_placed;
-            const hrs = Math.floor(s.uptime_secs / 3600);
-            const mins = Math.floor((s.uptime_secs % 3600) / 60);
-            document.getElementById('trades-sub').textContent = 'Uptime: ' + hrs + 'h ' + mins + 'm';
+    // ----------------------------------------------------------------
+    // Countdown + polling
+    // ----------------------------------------------------------------
+    function tick() {
+        countdownVal--;
+        document.getElementById('countdown').textContent = countdownVal;
+        if (countdownVal <= 0) { countdownVal = 30; fetchData(); fetchErrors(); }
+        progressCountdown--;
+        if (progressCountdown <= 0) { progressCountdown = 5; fetchProgress(); }
+    }
 
-            document.getElementById('cycles').textContent = s.cycle_count;
-            document.getElementById('costs').textContent = '$' + s.total_costs.toFixed(4);
-            document.getElementById('costs-sub').textContent = 'API: $' + s.total_api_costs.toFixed(4) + ' | IB: $' + s.total_ib_commissions.toFixed(2);
-        }
-
-        function updateProgress(data) {
-            const banner = document.getElementById('progress-banner');
-            const phaseEl = document.getElementById('progress-phase');
-            const detailEl = document.getElementById('progress-detail');
-            const modelEl = document.getElementById('model-info');
-
-            if (data.model) modelEl.textContent = data.model;
-
-            const s = data.progress.state;
-            if (s === 'idle') {
-                banner.style.display = 'none';
-                return;
-            }
-            banner.style.display = 'flex';
-
-            const labels = {
-                scanning: 'SCANNING', enriching: 'ENRICHING', estimating: 'ESTIMATING',
-                selecting: 'SELECTING', executing: 'EXECUTING', reconciling: 'RECONCILING',
-            };
-            phaseEl.textContent = labels[s] || s.toUpperCase();
-
-            if (s === 'estimating') {
-                const done = data.progress.markets_done || 0;
-                const total = data.progress.markets_total || 0;
-                detailEl.textContent = done < total
-                    ? total + ' markets — evaluating...'
-                    : total + ' markets evaluated';
-            } else if (s === 'enriching') {
-                detailEl.textContent = (data.progress.markets_total || 0) + ' markets';
-            } else if (s === 'executing') {
-                const n = data.progress.bets_total || 0;
-                detailEl.textContent = n === 0 ? 'no bets this cycle' : n + ' bet' + (n===1?'':'s');
-            } else {
-                detailEl.textContent = '';
-            }
-        }
-
-        function updateErrors(errors) {
-            const section = document.getElementById('errors-section');
-            if (!errors.length) { section.style.display = 'none'; return; }
-            section.style.display = 'block';
-            document.getElementById('error-count').textContent = '(' + errors.length + ')';
-            const recent = errors.slice().reverse().slice(0, 10);
-            document.getElementById('errors-table').innerHTML = recent.map(e => {
-                const t = new Date(e.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-                const msg = e.error.length > 100 ? e.error.substring(0, 100) + '…' : e.error;
-                return `<tr><td>${t}</td><td>${e.cycle_number}</td><td class="error-msg" title="${e.error}">${msg}</td></tr>`;
-            }).join('');
-        }
-
-        function updateCycles(cycles) {
-            const tbody = document.getElementById('cycles-table');
-            if (!cycles.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No cycles yet</td></tr>'; return; }
-            const recent = cycles.slice(-15).reverse();
-            tbody.innerHTML = recent.map(c =>
-                `<tr><td>${c.cycle_number}</td><td>${c.markets_scanned}</td><td>${c.edges_found}</td><td>${c.bets_placed}</td><td>$${c.cycle_cost.toFixed(4)}</td><td>$${c.bankroll_after.toFixed(2)}</td></tr>`
-            ).join('');
-        }
-
-        function updateTrades(trades) {
-            const tbody = document.getElementById('trades-table');
-            if (!trades.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No trades yet</td></tr>'; return; }
-            const recent = trades.slice(-15).reverse();
-            tbody.innerHTML = recent.map(t => {
-                const isMana = t.currency === 'Mana';
-                const amt = isMana ? '\u24C2' + t.amount.toFixed(0) : '$' + t.amount.toFixed(2);
-                return `<tr><td>${t.platform || '—'}</td><td title="${t.market_id}">${t.market_id.substring(0,12)}...</td><td>${t.side}</td><td>${amt}</td><td>${(t.edge_pct*100).toFixed(1)}%</td><td>${(t.confidence*100).toFixed(0)}%</td></tr>`;
-            }).join('');
-        }
-
-        // Countdown timer — main poll every 30s, progress poll every 5s
-        function tick() {
-            countdownVal--;
-            document.getElementById('countdown').textContent = countdownVal;
-            if (countdownVal <= 0) { countdownVal = 30; fetchData(); fetchErrors(); }
-
-            progressCountdown--;
-            if (progressCountdown <= 0) { progressCountdown = 5; fetchProgress(); }
-        }
-
-        // Init
-        initChart();
-        fetchData();
-        fetchProgress();
-        fetchErrors();
-        setInterval(tick, 1000);
-    </script>
+    // Init
+    initChart();
+    fetchData();
+    fetchProgress();
+    fetchErrors();
+    setInterval(tick, 1000);
+</script>
 </body>
 </html>

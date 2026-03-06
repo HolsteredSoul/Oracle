@@ -163,6 +163,21 @@ This document defines the phased development plan for ORACLE. Each phase produce
 - [x] Historical backtester (strategy replay engine)
 - [x] Calibration module (Brier scores, per-category breakdown, auto-diagnosis)
 
+### Phase 10: Auto-Exit Engine — COMPLETE
+
+**Completed 2026-03-06** (8 unit tests)
+
+- [x] `AutoExitEngine` in `src/engine/auto_exit.rs` — checks all open bets after each cycle
+- [x] Three close triggers: `TakeProfit` (≥ +15%), `StopLoss` (≤ -10%), `MaxHoldTime` (≥ 48 h)
+- [x] Manifold close: sells all shares via `/v0/market/{id}/sell` (YES or NO outcome)
+- [x] Betfair close: places hedge bet at current odds to green-up; enforces AUD $2.00 min stake and 80% available-liquidity check
+- [x] Dry-run mode per-engine (`auto_exit_dry_run` config flag)
+- [x] `[strategy]` config section in `config.toml` with defaults (`enable_auto_exit`, `take_profit_percent`, `stop_loss_percent`, `max_hold_hours`, `min_close_stake`)
+- [x] Dashboard "Recent Trades & Auto-Exits" table extended with Status badge and P&L columns
+- [x] New "Auto-Exits" stat card with TP / SL / Time breakdown
+- [x] `TradeLogEntry` extended: `close_reason: Option<String>`, `final_pnl: Option<f64>`
+- [x] 8 unit tests (all triggers, disabled engine, below-min stake, zero hold-time)
+
 ---
 
 ## New Roadmap (v2.0 — Betfair Migration)
@@ -281,7 +296,8 @@ oracle/
 │   │   ├── scanner.rs          # Multi-platform market scanner
 │   │   ├── enricher.rs         # Data enrichment pipeline
 │   │   ├── executor.rs         # Trade execution with retries
-│   │   └── accountant.rs       # Cost tracking + survival check
+│   │   ├── accountant.rs       # Cost tracking + survival check
+│   │   └── auto_exit.rs        # Auto-close engine (take-profit / stop-loss)
 │   ├── storage/
 │   │   └── mod.rs              # JSON state persistence
 │   ├── dashboard/
@@ -349,6 +365,7 @@ DATABASE_URL=sqlite://oracle.db
 | `risk.rs` | Position limits, drawdown multiplier, correlation blocking |
 | `openrouter.rs` | Client construction, model costs, fallback logic |
 | `betfair.rs` | Classification, price extraction, favourite selection, market conversion |
+| `auto_exit.rs` | All close triggers, disabled engine, below-min stake, zero hold-time |
 
 ### Integration Tests
 
@@ -443,5 +460,5 @@ docker run -d --env-file .env --network host -p 8080:8080 oracle
 
 ---
 
-*ORACLE Development Plan v2.0 — February 2026*
+*ORACLE Development Plan v2.0 — March 2026*
 *Build iteratively. Test relentlessly. Survive.*

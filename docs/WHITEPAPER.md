@@ -279,6 +279,13 @@ pub trait DataProvider: Send + Sync {
          │  Accountant      │
          │  (P&L, costs,    │
          │   cost tracking) │
+         └────────┬────────┘
+                  │ (after each cycle)
+                  ▼
+         ┌─────────────────┐
+         │  Auto-Exit       │──── Manifold: sell shares
+         │  Engine          │──── Betfair: hedge bet (green-up)
+         │  (TP/SL/Time)    │
          └─────────────────┘
 ```
 
@@ -319,7 +326,30 @@ Markets are often correlated (e.g., "Will CPI exceed 3%?" and "Will the Fed cut 
 - Limits aggregate exposure to correlated markets.
 - Avoids double-counting the same edge across correlated bets.
 
-### 5.4 Slippage Model
+### 5.4 Automated Position Management (Auto-Exit Engine)
+
+After every evaluation cycle, the agent inspects all open bets via the `AutoExitEngine` (`src/engine/auto_exit.rs`) and closes positions that meet a trigger threshold:
+
+| Trigger | Default | Description |
+|---------|---------|-------------|
+| **TakeProfit** | +15% P&L | Locks in gains before mean-reversion erodes them |
+| **StopLoss** | −10% P&L | Cuts losers before Kelly-sized losses compound |
+| **MaxHoldTime** | 48 hours | Force-close stale positions regardless of P&L |
+
+**Platform mechanics:**
+
+- *Manifold*: sells all shares via `POST /v0/market/{id}/sell`. No minimum size restriction.
+- *Betfair*: places a hedging bet on the opposite side at current market odds to green-up. Two safety checks are enforced before execution:
+  - Hedge stake must be ≥ `min_close_stake` (default AUD $2.00 — above Betfair's $1.00 exchange minimum).
+  - Available lay liquidity must be ≥ 80% of the hedge stake; otherwise the close is deferred to the next cycle.
+
+**Race-condition safety:** `ensure_session()` uses a double-checked locking pattern with `tokio::sync::RwLock` to guarantee only one concurrent caller triggers authentication, eliminating TOCTOU duplicates.
+
+**Dry-run mode:** Setting `auto_exit_dry_run = true` in `[strategy]` logs all close decisions without placing orders — useful for validating thresholds before enabling live exits.
+
+The closed-position event is logged to the dashboard's Recent Trades table with a Status badge (TAKE PROFIT / STOP LOSS / TIME LIMIT) and the realized P&L in platform currency.
+
+### 5.5 Slippage Model
 
 For Betfair Exchange (back/lay order book):
 ```
@@ -571,5 +601,5 @@ Based on simulation parameters:
 
 ---
 
-*ORACLE v2.0 — Last updated: February 2026*
+*ORACLE v2.0 — Last updated: March 2026*
 *"The market can stay irrational longer than you can stay solvent — unless you're a bot."*
