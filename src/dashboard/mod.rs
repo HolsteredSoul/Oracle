@@ -24,20 +24,19 @@ const DASHBOARD_HTML: &str = include_str!("templates/index.html");
 /// Start the dashboard web server.
 ///
 /// This spawns a background task — it doesn't block.
-pub fn spawn_dashboard(state: AppState, port: u16) -> Result<()> {
+pub async fn spawn_dashboard(state: AppState, port: u16) -> Result<()> {
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("Failed to bind dashboard port {port} — is it already in use?"))?;
+
+    info!(port, "Dashboard server starting on http://localhost:{port}");
     let app = build_router(state);
 
     tokio::spawn(async move {
-        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
-        info!(port, "Dashboard server starting on http://localhost:{port}");
-
-        let listener = tokio::net::TcpListener::bind(addr)
-            .await
-            .expect("Failed to bind dashboard port");
-
-        axum::serve(listener, app)
-            .await
-            .expect("Dashboard server error");
+        if let Err(e) = axum::serve(listener, app).await {
+            tracing::error!(error = %e, "Dashboard server error");
+        }
     });
 
     Ok(())
