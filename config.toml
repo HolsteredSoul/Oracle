@@ -62,6 +62,17 @@ fred_api_key_env = "FRED_API_KEY"
 news_api_key_env = "NEWS_API_KEY"
 coingecko = { enabled = true }
 
+[strategy]
+# Auto-exit / auto-close logic for open positions.
+# Betfair Australia minimum stake: AUD $1.00 (official, as of 2026).
+# We use $2.00 as a safety buffer (min_close_stake below).
+enable_auto_exit = true
+take_profit_percent = 15.0     # Close if unrealized P&L >= +15%
+stop_loss_percent = -10.0      # Close if unrealized P&L <= -10%
+max_hold_hours = 48            # Hard time limit in hours (0 = disabled)
+min_close_stake = 2.0          # AUD safety buffer above Betfair minimum ($1.00)
+auto_exit_dry_run = false      # true = log decisions only, place no real orders
+
 [dashboard]
 enabled = true
 port = 8080

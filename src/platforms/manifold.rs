@@ -144,6 +144,20 @@ struct ManifoldMarketDetail {
     /// Probabilistic resolution (0.0–1.0). Used for "MKT" resolution.
     #[serde(default)]
     resolution_probability: Option<f64>,
+    /// Current market probability (0.0–1.0). Present on open markets.
+    #[serde(default)]
+    probability: Option<f64>,
+}
+
+/// Response from `/v0/market/{id}/sell` POST — sell shares.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ManifoldSellResponse {
+    /// Net Mana returned (may be positive or negative depending on market move).
+    #[serde(default)]
+    amount: f64,
+    #[serde(default)]
+    status: Option<String>,
 }
 
 /// A resolved Manifold bet outcome, returned by `check_resolutions()`.
@@ -470,6 +484,106 @@ impl ManifoldClient {
         }
 
         results
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-exit helpers (non-trait, public methods)
+// ---------------------------------------------------------------------------
+
+impl ManifoldClient {
+    /// Fetch the current implied probability for a Manifold market.
+    ///
+    /// Returns a value in [0, 1]. Used by the auto-exit engine to compute
+    /// unrealized P&L on open positions.
+    pub async fn get_market_probability(&self, market_id: &str) -> Result<Decimal> {
+        let url = format!("{BASE_URL}/market/{market_id}");
+
+        let resp = self
+            .http
+            .get(&url)
+            .send()
+            .await
+            .context("Manifold market detail request failed")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Manifold market detail failed {status}: {body}");
+        }
+
+        let detail: ManifoldMarketDetail = resp
+            .json()
+            .await
+            .context("Failed to parse Manifold market detail")?;
+
+        // Use live probability for open markets; resolved markets use resolution_probability
+        let prob = if detail.is_resolved {
+            detail
+                .resolution_probability
+                .or_else(|| match detail.resolution.as_deref() {
+                    Some("YES") => Some(1.0),
+                    Some("NO") => Some(0.0),
+                    _ => None,
+                })
+                .unwrap_or(0.5)
+        } else {
+            detail.probability.unwrap_or(0.5)
+        };
+
+        Ok(d(prob.clamp(0.0, 1.0)))
+    }
+
+    /// Sell all shares of a given outcome on a Manifold market.
+    ///
+    /// Uses `POST /v0/market/{marketId}/sell`.
+    /// `outcome` should be "YES" or "NO".
+    /// Returns the net Mana amount from the sell, or None if unavailable.
+    ///
+    /// Requires an API key.
+    pub async fn sell_shares(
+        &self,
+        market_id: &str,
+        outcome: &str,
+    ) -> Result<Option<Decimal>> {
+        let api_key = self
+            .api_key
+            .as_ref()
+            .context("Manifold API key required for selling shares")?;
+
+        let body = serde_json::json!({
+            "outcome": outcome,
+            // No `shares` field = sell all shares for this outcome
+        });
+
+        let resp = self
+            .http
+            .post(&format!("{BASE_URL}/market/{market_id}/sell"))
+            .header("Authorization", format!("Key {api_key}"))
+            .json(&body)
+            .send()
+            .await
+            .context("Manifold sell request failed")?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body_text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Manifold sell failed {status}: {body_text}");
+        }
+
+        let sell_resp: ManifoldSellResponse = resp
+            .json()
+            .await
+            .context("Failed to parse Manifold sell response")?;
+
+        info!(
+            market_id = %market_id,
+            outcome = %outcome,
+            amount = %sell_resp.amount,
+            "Manifold shares sold"
+        );
+
+        Ok(Some(d(sell_resp.amount)))
     }
 }
 

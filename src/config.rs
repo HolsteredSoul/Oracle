@@ -17,6 +17,8 @@ pub struct AppConfig {
     pub llm: LlmConfig,
     pub platforms: PlatformsConfig,
     pub risk: RiskConfig,
+    #[serde(default)]
+    pub strategy: StrategyConfig,
     pub data_sources: DataSourcesConfig,
     pub dashboard: DashboardConfig,
     pub alerts: AlertsConfig,
@@ -138,6 +140,65 @@ pub struct RiskConfig {
     pub max_exposure_pct: Decimal,
     pub min_liquidity_contracts: u64,
     pub category_thresholds: HashMap<String, Decimal>,
+}
+
+/// Strategy / auto-exit configuration ([strategy] section).
+///
+/// ## Betfair Australia minimum stake (AUD, March 2026)
+/// - Exchange back/lay bets placed via API: **AUD $1.00** minimum
+/// - BSP back bets: same AUD $1.00 minimum
+/// - BSP lay liability: unchanged (not affected by the 2022 reduction)
+/// - Sub-minimum bets via API are technically possible but risk account suspension
+/// - Min Bet Payout exception: bets below $1 AUD are valid when payout ≥ $10 AUD
+///
+/// Oracle defaults `min_close_stake` to $2.00 AUD as a safety buffer above the
+/// $1.00 absolute minimum. Never place a closing bet below this value.
+///
+/// ## Manifold minimum sell
+/// - No documented minimum; `shares` parameter is optional (defaults to all)
+/// - Practical minimum: 1 Mana — essentially no meaningful constraint
+#[derive(Debug, Deserialize, Clone)]
+pub struct StrategyConfig {
+    /// Enable automatic take-profit / stop-loss / time-based position closing.
+    #[serde(default = "StrategyConfig::default_enable_auto_exit")]
+    pub enable_auto_exit: bool,
+    /// Close position if unrealized P&L reaches this percentage (e.g. 15.0 = +15%).
+    #[serde(default = "StrategyConfig::default_take_profit_percent")]
+    pub take_profit_percent: Decimal,
+    /// Close position if unrealized P&L falls to this percentage (e.g. -10.0 = -10%).
+    #[serde(default = "StrategyConfig::default_stop_loss_percent")]
+    pub stop_loss_percent: Decimal,
+    /// Force-close after this many hours (0 = disabled).
+    #[serde(default = "StrategyConfig::default_max_hold_hours")]
+    pub max_hold_hours: u64,
+    /// Minimum closing stake in AUD (Betfair) or Mana (Manifold).
+    /// Betfair official minimum is $1.00 AUD; default here is $2.00 as buffer.
+    #[serde(default = "StrategyConfig::default_min_close_stake")]
+    pub min_close_stake: Decimal,
+    /// If true, log close decisions without placing real orders (dry-run).
+    #[serde(default)]
+    pub auto_exit_dry_run: bool,
+}
+
+impl Default for StrategyConfig {
+    fn default() -> Self {
+        Self {
+            enable_auto_exit: true,
+            take_profit_percent: rust_decimal_macros::dec!(15.0),
+            stop_loss_percent: rust_decimal_macros::dec!(-10.0),
+            max_hold_hours: 48,
+            min_close_stake: rust_decimal_macros::dec!(2.0),
+            auto_exit_dry_run: false,
+        }
+    }
+}
+
+impl StrategyConfig {
+    fn default_enable_auto_exit() -> bool { true }
+    fn default_take_profit_percent() -> Decimal { rust_decimal_macros::dec!(15.0) }
+    fn default_stop_loss_percent() -> Decimal { rust_decimal_macros::dec!(-10.0) }
+    fn default_max_hold_hours() -> u64 { 48 }
+    fn default_min_close_stake() -> Decimal { rust_decimal_macros::dec!(2.0) }
 }
 
 #[derive(Debug, Deserialize, Clone)]
