@@ -93,7 +93,9 @@ async fn main() -> Result<()> {
     let dashboard_state: AppState = Arc::new(DashboardState::new(state.clone()));
 
     if cfg.dashboard.enabled {
-        spawn_dashboard(Arc::clone(&dashboard_state), cfg.dashboard.port)?;
+        if let Err(e) = spawn_dashboard(Arc::clone(&dashboard_state), cfg.dashboard.port).await {
+            tracing::warn!(error = %e, "Dashboard disabled — could not start");
+        }
     }
 
     // -- Initialise components -------------------------------------------
@@ -151,7 +153,7 @@ async fn main() -> Result<()> {
 
     let llm: Box<dyn LlmEstimator> = if llm_api_key.is_empty() {
         warn!("No LLM API key configured — running in dry-run/scan-only mode");
-        Box::new(AnthropicClient::new("dummy".into(), Some(cfg.llm.model.clone()), None)?)
+        Box::new(AnthropicClient::new("dummy".into(), Some("dummy".to_string()), None)?)
     } else {
         match cfg.llm.provider.as_str() {
             "openrouter" => {
