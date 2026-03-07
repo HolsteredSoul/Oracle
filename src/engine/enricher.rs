@@ -13,25 +13,13 @@ use rust_decimal::Decimal;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
+use crate::config::EnricherConfig;
 use crate::data::economics::EconomicsProvider;
 use crate::data::news::NewsProvider;
 use crate::data::sports::SportsProvider;
 use crate::data::weather::WeatherProvider;
 use crate::data::DataProvider;
 use crate::types::{DataContext, Market, MarketCategory};
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-/// Default TTL for cached contexts.
-const DEFAULT_CACHE_TTL_MINS: i64 = 30;
-
-/// Weather data is slower to change — longer cache.
-const WEATHER_CACHE_TTL_MINS: i64 = 60;
-
-/// News/politics is fast-moving — shorter cache.
-const NEWS_CACHE_TTL_MINS: i64 = 15;
 
 // ---------------------------------------------------------------------------
 // Cache
@@ -93,6 +81,7 @@ impl ContextCache {
 
 /// Orchestrates data enrichment across all providers with caching.
 pub struct Enricher {
+    config: EnricherConfig,
     weather: WeatherProvider,
     sports: SportsProvider,
     economics: EconomicsProvider,
@@ -104,13 +93,24 @@ pub struct Enricher {
 }
 
 impl Enricher {
-    /// Create a new enricher with optional API keys.
+    /// Create a new enricher with optional API keys (uses default TTL config).
     pub fn new(
         fred_api_key: Option<String>,
         news_api_key: Option<String>,
         sports_api_key: Option<String>,
     ) -> Result<Self> {
+        Self::with_config(EnricherConfig::default(), fred_api_key, news_api_key, sports_api_key)
+    }
+
+    /// Create a new enricher with explicit TTL configuration.
+    pub fn with_config(
+        config: EnricherConfig,
+        fred_api_key: Option<String>,
+        news_api_key: Option<String>,
+        sports_api_key: Option<String>,
+    ) -> Result<Self> {
         Ok(Self {
+            config,
             weather: WeatherProvider::new()
                 .context("Failed to initialise weather provider")?,
             sports: SportsProvider::new(sports_api_key)
@@ -193,7 +193,7 @@ impl Enricher {
         let context = self.fetch_from_provider(market).await?;
 
         // Cache the result
-        let ttl = Self::ttl_for_category(&market.category);
+        let ttl = self.ttl_for_category(&market.category);
         self.cache.insert(cache_key, context.clone(), ttl);
         self.total_calls += 1;
         self.total_cost += context.cost;
@@ -241,12 +241,13 @@ impl Enricher {
     }
 
     /// TTL varies by category — fast-moving categories expire sooner.
-    fn ttl_for_category(category: &MarketCategory) -> Duration {
+    fn ttl_for_category(&self, category: &MarketCategory) -> Duration {
         match category {
-            MarketCategory::Weather => Duration::minutes(WEATHER_CACHE_TTL_MINS),
+            MarketCategory::Weather =>
+                Duration::minutes(self.config.weather_cache_ttl_mins),
             MarketCategory::Politics | MarketCategory::Culture =>
-                Duration::minutes(NEWS_CACHE_TTL_MINS),
-            _ => Duration::minutes(DEFAULT_CACHE_TTL_MINS),
+                Duration::minutes(self.config.news_cache_ttl_mins),
+            _ => Duration::minutes(self.config.default_cache_ttl_mins),
         }
     }
 
@@ -384,8 +385,9 @@ mod tests {
 
     #[test]
     fn test_ttl_weather_longer() {
-        let weather = Enricher::ttl_for_category(&MarketCategory::Weather);
-        let politics = Enricher::ttl_for_category(&MarketCategory::Politics);
+        let enricher = Enricher::new(None, None, None).unwrap();
+        let weather = enricher.ttl_for_category(&MarketCategory::Weather);
+        let politics = enricher.ttl_for_category(&MarketCategory::Politics);
         assert!(weather > politics, "Weather TTL should be longer than politics");
     }
 

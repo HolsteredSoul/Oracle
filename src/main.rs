@@ -145,10 +145,9 @@ async fn main() -> Result<()> {
     };
 
     // Market router (takes ownership of platform clients)
-    let router = if betfair.is_some() {
-        MarketRouter::with_betfair(betfair.unwrap(), manifold, metaculus)
-    } else {
-        MarketRouter::new(manifold, metaculus)
+    let router = match betfair {
+        Some(bf) => MarketRouter::with_betfair_config(cfg.scanner.clone(), bf, manifold, metaculus),
+        None => MarketRouter::with_config(cfg.scanner.clone(), manifold, metaculus),
     };
 
     // Data enricher
@@ -158,7 +157,7 @@ async fn main() -> Result<()> {
         .and_then(|env| std::env::var(env).ok());
     let sports_key = cfg.data_sources.api_sports_key_env.as_deref()
         .and_then(|env| std::env::var(env).ok());
-    let mut enricher = Enricher::new(fred_key, news_key, sports_key)?;
+    let mut enricher = Enricher::with_config(cfg.enricher.clone(), fred_key, news_key, sports_key)?;
 
     // LLM estimator
     let llm_api_key = std::env::var(&cfg.llm.api_key_env).unwrap_or_default();

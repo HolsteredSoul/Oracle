@@ -119,6 +119,7 @@ impl Backtester {
         let mut balance_history = vec![(Utc::now(), initial_bankroll)];
         let mut returns: Vec<f64> = Vec::new();
         let mut brier_sum = 0.0_f64;
+        let mut brier_count = 0usize;
         let mut peak = initial_bankroll;
         let mut max_dd = 0.0_f64;
         let mut wins = 0usize;
@@ -136,11 +137,15 @@ impl Backtester {
 
             // Use edge detector to check thresholds
             let threshold = self.edge_detector.config().threshold_for(&market.category);
-            if abs_edge < threshold {
-                // Brier score still counts for all estimates
+            // Brier score counts for every market with a valid estimate, regardless of threshold
+            {
                 let outcome: f64 = if market.resolved_yes { 1.0 } else { 0.0 };
                 let est_f64 = market.estimated_probability.to_f64().unwrap_or(0.0);
                 brier_sum += (est_f64 - outcome) * (est_f64 - outcome);
+                brier_count += 1;
+            }
+
+            if abs_edge < threshold {
                 continue;
             }
 
@@ -235,11 +240,6 @@ impl Backtester {
                 state.status = AgentStatus::Died;
             }
 
-            // Brier score (f64 for statistical computation)
-            let outcome: f64 = if market.resolved_yes { 1.0 } else { 0.0 };
-            let est_f64 = market.estimated_probability.to_f64().unwrap_or(0.0);
-            brier_sum += (est_f64 - outcome) * (est_f64 - outcome);
-
             trade_log.push(BacktestTrade {
                 market_id: market.id.clone(),
                 side: side.clone(),
@@ -256,8 +256,8 @@ impl Backtester {
         }
 
         let total_trades = trade_log.len();
-        let brier_score = if !markets.is_empty() {
-            brier_sum / markets.len() as f64
+        let brier_score = if brier_count > 0 {
+            brier_sum / brier_count as f64
         } else {
             0.0
         };

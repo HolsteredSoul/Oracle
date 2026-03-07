@@ -10,7 +10,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::types::AgentState;
+use crate::types::{AgentState, TradeReceipt};
 
 // ---------------------------------------------------------------------------
 // Progress tracking types
@@ -234,14 +234,16 @@ pub async fn get_costs(State(state): State<AppState>) -> Json<CostsResponse> {
     let total_api_costs = agent.total_api_costs.to_f64().unwrap_or(0.0);
     let total_ib_commissions = agent.total_ib_commissions.to_f64().unwrap_or(0.0);
     let total_costs = agent.total_costs().to_f64().unwrap_or(0.0);
+    let llm_costs = agent.total_llm_costs.to_f64().unwrap_or(0.0);
+    let data_costs = agent.total_data_costs.to_f64().unwrap_or(0.0);
 
     Json(CostsResponse {
         total_api_costs,
         total_ib_commissions,
         total_costs,
         cost_breakdown: CostBreakdown {
-            llm: total_api_costs * 0.8,    // Approximate split
-            data: total_api_costs * 0.2,
+            llm: llm_costs,
+            data: data_costs,
             ib_commissions: total_ib_commissions,
         },
     })
@@ -288,6 +290,13 @@ pub async fn get_errors(State(state): State<AppState>) -> Json<Vec<ErrorLogEntry
     let log = state.error_log.read().await;
     let start = log.len().saturating_sub(50);
     Json(log[start..].to_vec())
+}
+
+/// GET /api/positions
+/// Returns all open (unresolved) bets.
+pub async fn get_positions(State(state): State<AppState>) -> Json<Vec<TradeReceipt>> {
+    let agent = state.agent.read().await;
+    Json(agent.open_bets.clone())
 }
 
 /// GET /health

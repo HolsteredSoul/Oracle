@@ -249,6 +249,8 @@ mod tests {
             trades_won: 3,
             trades_lost: 2,
             total_api_costs: Decimal::ONE,
+            total_llm_costs: dec!(0.8),
+            total_data_costs: dec!(0.2),
             total_ib_commissions: dec!(0.5),
             start_time: Utc::now() - Duration::days(7),
             peak_bankroll: peak,
