@@ -598,6 +598,7 @@ async fn update_dashboard(dash: &AppState, state: &AgentState, report: &CycleRep
         history.push(BalancePoint {
             timestamp: report.timestamp.to_rfc3339(),
             bankroll: report.bankroll_after.to_f64().unwrap_or(0.0),
+            mana_bankroll: state.mana_bankroll.to_f64().unwrap_or(0.0),
         });
         if history.len() > 500 {
             let excess = history.len() - 500;

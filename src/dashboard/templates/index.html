@@ -18,6 +18,7 @@
             --blue: #448aff;
             --purple: #b388ff;
             --teal: #26c6da;
+            --mana: #7c6af7;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -46,11 +47,32 @@
         .status-died   { background: rgba(255,82,82,0.15);  color: var(--red);    border: 1px solid var(--red); }
         .status-paused { background: rgba(255,171,64,0.15); color: var(--orange); border: 1px solid var(--orange); }
         .mode-badge { padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; letter-spacing: 1px; }
-        .mode-paper { background: rgba(68,138,255,0.15); color: var(--blue);   border: 1px solid var(--blue); }
+        .mode-paper { background: rgba(124,106,247,0.15); color: var(--mana);  border: 1px solid var(--mana); }
         .mode-live  { background: rgba(255,82,82,0.15);  color: var(--red);    border: 1px solid var(--red); }
         .mode-dry   { background: rgba(136,136,136,0.15); color: var(--dim);   border: 1px solid var(--dim); }
         .refresh-info { color: var(--dim); font-size: 12px; }
         .model-info   { color: var(--purple); font-size: 11px; letter-spacing: 0.5px; opacity: 0.8; }
+
+        /* Mode-aware notice bar */
+        .mode-notice {
+            padding: 8px 24px;
+            font-size: 12px;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+        .mode-notice.paper {
+            display: flex;
+            background: rgba(124,106,247,0.08);
+            border-bottom: 1px solid rgba(124,106,247,0.2);
+            color: var(--mana);
+        }
+        .mode-notice.live {
+            display: flex;
+            background: rgba(255,82,82,0.06);
+            border-bottom: 1px solid rgba(255,82,82,0.2);
+            color: var(--red);
+        }
 
         /* Progress banner */
         .progress-banner {
@@ -65,7 +87,6 @@
         .progress-phase::before { content: '▶ '; animation: pulse 1s ease-in-out infinite; }
         @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
         .progress-detail { color: var(--dim); }
-        .phase-autoexit { color: var(--teal) !important; }
 
         /* Stats grid */
         .grid {
@@ -77,15 +98,30 @@
             background: var(--surface); border: 1px solid var(--border);
             border-radius: 8px; padding: 16px;
         }
+        .card.card-primary { border-color: var(--mana); }
         .card-label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
         .card-value { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
         .card-sub   { color: var(--dim); font-size: 12px; margin-top: 4px; }
         .positive { color: var(--green); }
         .negative { color: var(--red); }
         .neutral  { color: var(--teal); }
+        .mana-color { color: var(--mana); }
+
+        /* Section layouts */
+        .section { padding: 0 24px 16px; }
+        .section-2col {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 12px; padding: 0 24px 16px;
+        }
+        .section-3col {
+            display: grid; grid-template-columns: 2fr 1fr;
+            gap: 12px; padding: 0 24px 16px;
+        }
+        @media (max-width: 900px) {
+            .section-2col, .section-3col { grid-template-columns: 1fr; }
+        }
 
         /* Chart */
-        .chart-section { padding: 0 24px 16px; }
         .chart-card {
             background: var(--surface); border: 1px solid var(--border);
             border-radius: 8px; padding: 16px;
@@ -94,11 +130,6 @@
         .chart-container { position: relative; height: 250px; }
 
         /* Tables */
-        .tables-grid {
-            display: grid; grid-template-columns: 1fr 1fr;
-            gap: 12px; padding: 0 24px 16px;
-        }
-        @media (max-width: 900px) { .tables-grid { grid-template-columns: 1fr; } }
         .table-card {
             background: var(--surface); border: 1px solid var(--border);
             border-radius: 8px; padding: 16px; overflow-x: auto;
@@ -110,9 +141,10 @@
         tr:hover td { background: rgba(255,255,255,0.03); }
         .empty-msg { color: var(--dim); font-style: italic; padding: 16px 0; }
         .error-msg { color: var(--red); }
-        .errors-section { padding: 0 24px 24px; }
+        tr.row-closed td { opacity: 0.82; }
+        tr.row-closed:hover td { opacity: 1; }
 
-        /* Auto-exit / status badges in trades table */
+        /* Badges */
         .badge {
             display: inline-block; padding: 2px 8px; border-radius: 10px;
             font-size: 11px; font-weight: 600; letter-spacing: 0.5px; white-space: nowrap;
@@ -121,22 +153,45 @@
         .badge-sl   { background: rgba(255,82,82,0.15);  color: var(--red);    border: 1px solid var(--red); }
         .badge-time { background: rgba(38,198,218,0.15); color: var(--teal);   border: 1px solid var(--teal); }
         .badge-open { background: rgba(68,138,255,0.10); color: var(--blue);   border: 1px solid rgba(68,138,255,0.35); }
+        .badge-manifold { background: rgba(124,106,247,0.15); color: var(--mana); border: 1px solid var(--mana); }
 
-        /* Slightly muted rows for closed positions */
-        tr.row-closed td { opacity: 0.82; }
-        tr.row-closed:hover td { opacity: 1; }
+        /* Costs breakdown mini-bars */
+        .cost-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+        .cost-label { color: var(--dim); width: 90px; flex-shrink: 0; }
+        .cost-bar-bg { flex: 1; background: var(--border); border-radius: 4px; height: 6px; }
+        .cost-bar-fill { height: 6px; border-radius: 4px; transition: width 0.4s; }
+        .cost-val { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
+
+        /* Uptime & metrics strip */
+        .metrics-strip {
+            display: flex; gap: 24px; flex-wrap: wrap;
+            padding: 0 24px 8px; font-size: 13px; color: var(--dim);
+        }
+        .metrics-strip span { white-space: nowrap; }
+        .metrics-strip strong { color: var(--text); }
+
+        .footer { padding: 16px 24px; color: var(--dim); font-size: 11px; }
     </style>
 </head>
 <body>
 
+<!-- ── Header ─────────────────────────────────────────────────────────── -->
 <div class="header">
-    <h1><span>ORACLE</span> Dashboard</h1>
-    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-        <span id="model-info" class="model-info"></span>
-        <span id="mode-badge" class="mode-badge mode-dry">—</span>
-        <span id="status-badge" class="status-badge status-alive">LOADING...</span>
-        <span class="refresh-info">Auto-refresh: <span id="countdown">30</span>s</span>
+    <div>
+        <h1><span>ORACLE</span> Dashboard</h1>
+        <div id="model-info" class="model-info" style="margin-top:4px;"></div>
     </div>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span id="mode-badge" class="mode-badge mode-dry">—</span>
+        <span id="status-badge" class="status-badge status-alive">LOADING…</span>
+        <span class="refresh-info">Refresh in <span id="countdown">30</span>s</span>
+    </div>
+</div>
+
+<!-- Mode notice bar -->
+<div id="mode-notice" class="mode-notice">
+    <strong id="mode-notice-icon">ⓘ</strong>
+    <span id="mode-notice-text"></span>
 </div>
 
 <!-- Live cycle progress (hidden when idle) -->
@@ -145,60 +200,88 @@
     <span id="progress-detail" class="progress-detail"></span>
 </div>
 
-<!-- Stats cards -->
+<!-- ── Primary stats grid ─────────────────────────────────────────────── -->
 <div class="grid">
-    <div class="card">
-        <div class="card-label">Bankroll</div>
-        <div class="card-value" id="bankroll">$—</div>
-        <div class="card-sub" id="bankroll-sub"></div>
+    <!-- Card 1: primary balance (Mana in paper, AUD in live) -->
+    <div class="card" id="card-balance">
+        <div class="card-label" id="lbl-balance">Balance</div>
+        <div class="card-value" id="val-balance">—</div>
+        <div class="card-sub" id="sub-balance"></div>
     </div>
+
+    <!-- Card 2: primary P&L -->
     <div class="card">
-        <div class="card-label">Total P&amp;L</div>
-        <div class="card-value" id="pnl">$—</div>
-        <div class="card-sub" id="pnl-sub"></div>
+        <div class="card-label" id="lbl-pnl">P&amp;L</div>
+        <div class="card-value" id="val-pnl">—</div>
+        <div class="card-sub" id="sub-pnl"></div>
     </div>
+
+    <!-- Card 3: win rate -->
     <div class="card">
-        <div class="card-label">Win Rate</div>
-        <div class="card-value" id="winrate">—%</div>
-        <div class="card-sub" id="winrate-sub"></div>
+        <div class="card-label" id="lbl-winrate">Win Rate</div>
+        <div class="card-value" id="val-winrate">—%</div>
+        <div class="card-sub" id="sub-winrate"></div>
     </div>
+
+    <!-- Card 4: trades -->
     <div class="card">
         <div class="card-label">Trades</div>
-        <div class="card-value" id="trades">—</div>
-        <div class="card-sub" id="trades-sub"></div>
+        <div class="card-value" id="val-trades">—</div>
+        <div class="card-sub" id="sub-trades"></div>
     </div>
+
+    <!-- Card 5: auto-exits -->
     <div class="card">
         <div class="card-label">Auto-Exits</div>
-        <div class="card-value neutral" id="auto-exits">—</div>
-        <div class="card-sub" id="auto-exits-sub">TP / SL / Time</div>
+        <div class="card-value neutral" id="val-auto-exits">—</div>
+        <div class="card-sub" id="sub-auto-exits">TP / SL / Time</div>
     </div>
+
+    <!-- Card 6: cycles -->
     <div class="card">
         <div class="card-label">Cycles</div>
-        <div class="card-value" id="cycles">—</div>
-        <div class="card-sub" id="cycles-sub"></div>
+        <div class="card-value" id="val-cycles">—</div>
+        <div class="card-sub" id="sub-cycles"></div>
     </div>
+
+    <!-- Card 7: API budget (AUD) — always shown, secondary in paper mode -->
     <div class="card">
-        <div class="card-label">Total Costs</div>
-        <div class="card-value" id="costs">$—</div>
-        <div class="card-sub" id="costs-sub"></div>
+        <div class="card-label" id="lbl-budget">API Budget</div>
+        <div class="card-value" id="val-budget">$—</div>
+        <div class="card-sub" id="sub-budget"></div>
     </div>
 </div>
 
-<!-- Balance chart -->
-<div class="chart-section">
+<!-- ── Metrics strip ──────────────────────────────────────────────────── -->
+<div class="metrics-strip" id="metrics-strip">
+    <span>Uptime: <strong id="m-uptime">—</strong></span>
+    <span>ROI: <strong id="m-roi">—</strong></span>
+    <span id="m-open-positions-strip">Open Positions: <strong id="m-open">—</strong></span>
+    <span>Total Costs: <strong id="m-costs">—</strong></span>
+</div>
+
+<!-- ── Balance / Mana chart ───────────────────────────────────────────── -->
+<div class="section">
     <div class="chart-card">
-        <h3>Balance History</h3>
+        <h3 id="chart-title">Balance History</h3>
         <div class="chart-container"><canvas id="balanceChart"></canvas></div>
     </div>
 </div>
 
-<!-- Recent Cycles | Recent Trades & Auto-Exits -->
-<div class="tables-grid">
+<!-- ── Recent Cycles + Costs breakdown ───────────────────────────────── -->
+<div class="section-3col">
     <div class="table-card">
         <h3>Recent Cycles</h3>
         <table>
             <thead>
-                <tr><th>#</th><th>Scanned</th><th>Edges</th><th>Bets</th><th>Cost</th><th>Balance</th></tr>
+                <tr>
+                    <th>#</th>
+                    <th>Scanned</th>
+                    <th>Edges</th>
+                    <th>Bets</th>
+                    <th>Cycle Cost</th>
+                    <th id="th-cycle-balance">AUD Budget</th>
+                </tr>
             </thead>
             <tbody id="cycles-table">
                 <tr><td colspan="6" class="empty-msg">No cycles yet</td></tr>
@@ -207,7 +290,59 @@
     </div>
 
     <div class="table-card">
-        <h3>Recent Trades &amp; Auto-Exits</h3>
+        <h3>Cost Breakdown</h3>
+        <div id="costs-panel" style="padding-top:8px;">
+            <div class="cost-row">
+                <span class="cost-label">LLM</span>
+                <div class="cost-bar-bg"><div class="cost-bar-fill" id="bar-llm" style="background:var(--purple);width:0%"></div></div>
+                <span class="cost-val" id="cost-llm">$—</span>
+            </div>
+            <div class="cost-row">
+                <span class="cost-label">Data APIs</span>
+                <div class="cost-bar-bg"><div class="cost-bar-fill" id="bar-data" style="background:var(--teal);width:0%"></div></div>
+                <span class="cost-val" id="cost-data">$—</span>
+            </div>
+            <div class="cost-row">
+                <span class="cost-label">Commissions</span>
+                <div class="cost-bar-bg"><div class="cost-bar-fill" id="bar-comm" style="background:var(--orange);width:0%"></div></div>
+                <span class="cost-val" id="cost-comm">$—</span>
+            </div>
+            <hr style="border-color:var(--border);margin:12px 0;">
+            <div style="display:flex;justify-content:space-between;font-size:13px;">
+                <span style="color:var(--dim);">Total</span>
+                <strong id="cost-total">$—</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:6px;color:var(--dim);">
+                <span>API costs</span>
+                <span id="cost-api">$—</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Open Positions + Trades ────────────────────────────────────────── -->
+<div class="section-2col">
+    <div class="table-card">
+        <h3>Open Positions <span id="positions-count" style="color:var(--dim);font-weight:400;font-size:12px;"></span></h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Platform</th>
+                    <th>Market</th>
+                    <th>Side</th>
+                    <th>Stake</th>
+                    <th>Price</th>
+                    <th>Opened</th>
+                </tr>
+            </thead>
+            <tbody id="positions-table">
+                <tr><td colspan="6" class="empty-msg">No open positions</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="table-card">
+        <h3>Recent Trades &amp; Exits</h3>
         <table>
             <thead>
                 <tr>
@@ -227,8 +362,8 @@
     </div>
 </div>
 
-<!-- Error log -->
-<div class="errors-section" id="errors-section" style="display:none;">
+<!-- ── Error log (hidden when empty) ─────────────────────────────────── -->
+<div class="section" id="errors-section" style="display:none;">
     <div class="table-card">
         <h3 style="color:var(--red);">Error Log <span id="error-count"></span></h3>
         <table>
@@ -238,35 +373,67 @@
     </div>
 </div>
 
+<div class="footer">ORACLE — Autonomous Prediction Market Agent</div>
+
 <script>
     const API = window.location.origin;
-    let balanceChart  = null;
-    let countdownVal  = 30;
-    let progressCountdown = 5;
 
-    // ----------------------------------------------------------------
-    // Balance chart
-    // ----------------------------------------------------------------
+    // Global mode state — set once on first status fetch, drives all display logic
+    let tradingMode = 'dry'; // 'paper' | 'live' | 'dry'
+    let balanceChart = null;
+    let countdownVal = 30;
+    let progressTick = 5;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Chart initialisation
+    // ─────────────────────────────────────────────────────────────────────
     function initChart() {
         const ctx = document.getElementById('balanceChart').getContext('2d');
         balanceChart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
-                datasets: [{
-                    label: 'Bankroll ($)',
-                    data: [],
-                    borderColor: '#ffab40',
-                    backgroundColor: 'rgba(255,171,64,0.08)',
-                    fill: true, tension: 0.3, pointRadius: 2
-                }]
+                datasets: [
+                    {
+                        label: 'Mana Balance',
+                        data: [],
+                        borderColor: '#7c6af7',
+                        backgroundColor: 'rgba(124,106,247,0.08)',
+                        fill: true, tension: 0.3, pointRadius: 2,
+                        yAxisID: 'y',
+                    },
+                    {
+                        label: 'AUD Budget',
+                        data: [],
+                        borderColor: '#ffab40',
+                        backgroundColor: 'transparent',
+                        borderDash: [4, 4],
+                        fill: false, tension: 0.3, pointRadius: 0,
+                        yAxisID: 'y2',
+                    }
+                ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, labels: { color: '#888', font: { size: 11 } } }
+                },
                 scales: {
-                    x: { ticks: { color: '#888', maxTicksLimit: 10 }, grid: { color: '#1e1e2e' } },
-                    y: { ticks: { color: '#888', callback: v => '$' + v }, grid: { color: '#1e1e2e' } }
+                    x: {
+                        ticks: { color: '#888', maxTicksLimit: 10 },
+                        grid: { color: '#1e1e2e' }
+                    },
+                    y: {
+                        position: 'left',
+                        ticks: { color: '#7c6af7', callback: v => 'M' + Math.round(v) },
+                        grid: { color: '#1e1e2e' }
+                    },
+                    y2: {
+                        position: 'right',
+                        ticks: { color: '#ffab40', callback: v => '$' + v.toFixed(2) },
+                        grid: { drawOnChartArea: false }
+                    }
                 }
             }
         });
@@ -274,29 +441,59 @@
 
     function updateChart(data) {
         if (!balanceChart) return;
-        balanceChart.data.labels = data.map(p => {
+        const labels = data.map(p => {
             const d = new Date(p.timestamp);
             return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         });
-        balanceChart.data.datasets[0].data = data.map(p => p.bankroll);
+        balanceChart.data.labels = labels;
+
+        if (tradingMode === 'paper') {
+            // Primary: Mana; secondary: AUD budget (dashed)
+            balanceChart.data.datasets[0].data = data.map(p => p.mana_bankroll || 0);
+            balanceChart.data.datasets[0].hidden = false;
+            balanceChart.data.datasets[1].data = data.map(p => p.bankroll);
+            balanceChart.data.datasets[1].hidden = false;
+            document.getElementById('chart-title').textContent = 'Mana Balance History';
+        } else if (tradingMode === 'live') {
+            // Primary: AUD only
+            balanceChart.data.datasets[0].data = data.map(p => p.bankroll);
+            balanceChart.data.datasets[0].borderColor = '#ffab40';
+            balanceChart.data.datasets[0].backgroundColor = 'rgba(255,171,64,0.08)';
+            balanceChart.data.datasets[0].label = 'AUD Balance';
+            balanceChart.options.scales.y.ticks.callback = v => '$' + v.toFixed(2);
+            balanceChart.options.scales.y.ticks.color = '#ffab40';
+            balanceChart.data.datasets[1].hidden = true;
+            document.getElementById('chart-title').textContent = 'AUD Balance History';
+        } else {
+            // Dry run — just show AUD budget
+            balanceChart.data.datasets[0].data = data.map(p => p.bankroll);
+            balanceChart.data.datasets[0].label = 'AUD Budget';
+            balanceChart.data.datasets[1].hidden = true;
+            document.getElementById('chart-title').textContent = 'Budget History (Dry Run)';
+        }
         balanceChart.update('none');
     }
 
-    // ----------------------------------------------------------------
-    // Fetch
-    // ----------------------------------------------------------------
-    async function fetchData() {
+    // ─────────────────────────────────────────────────────────────────────
+    // Fetch all data in parallel
+    // ─────────────────────────────────────────────────────────────────────
+    async function fetchAll() {
         try {
-            const [statusR, cyclesR, historyR, tradesR] = await Promise.all([
+            const [statusR, cyclesR, historyR, tradesR, costsR, metricsR, positionsR] = await Promise.all([
                 fetch(API + '/api/status').then(r => r.json()),
                 fetch(API + '/api/cycles').then(r => r.json()),
                 fetch(API + '/api/balance-history').then(r => r.json()),
                 fetch(API + '/api/trades').then(r => r.json()),
+                fetch(API + '/api/costs').then(r => r.json()),
+                fetch(API + '/api/metrics').then(r => r.json()),
+                fetch(API + '/api/positions').then(r => r.json()),
             ]);
-            updateStatus(statusR);
+            updateStatus(statusR, metricsR);
             updateCycles(cyclesR);
             updateChart(historyR);
             updateTrades(tradesR);
+            updateCosts(costsR);
+            updatePositions(positionsR);
         } catch (e) { console.error('Fetch error:', e); }
     }
 
@@ -314,51 +511,141 @@
         } catch (e) { /* non-critical */ }
     }
 
-    // ----------------------------------------------------------------
-    // Status panel
-    // ----------------------------------------------------------------
-    function updateStatus(s) {
+    // ─────────────────────────────────────────────────────────────────────
+    // Status panel — mode-aware display
+    // ─────────────────────────────────────────────────────────────────────
+    function updateStatus(s, metrics) {
+        // Track mode globally (drives chart + card labels)
+        tradingMode = (s.trading_mode || 'dry').toLowerCase();
+
+        // Status badge
         const badge = document.getElementById('status-badge');
-        if (s.status.includes('ALIVE'))     { badge.className = 'status-badge status-alive';  badge.textContent = 'ALIVE'; }
-        else if (s.status.includes('DIED')) { badge.className = 'status-badge status-died';   badge.textContent = 'DIED'; }
-        else                                 { badge.className = 'status-badge status-paused'; badge.textContent = 'PAUSED'; }
+        if (s.status.includes('ALIVE'))      { badge.className = 'status-badge status-alive';  badge.textContent = 'ALIVE'; }
+        else if (s.status.includes('DIED'))  { badge.className = 'status-badge status-died';   badge.textContent = 'DIED'; }
+        else                                  { badge.className = 'status-badge status-paused'; badge.textContent = 'PAUSED'; }
 
+        // Mode badge
         const modeBadge = document.getElementById('mode-badge');
-        const mode = (s.trading_mode || 'dry').toLowerCase();
-        modeBadge.textContent = mode.toUpperCase();
-        modeBadge.className = 'mode-badge mode-' + mode;
+        modeBadge.textContent = tradingMode.toUpperCase();
+        modeBadge.className = 'mode-badge mode-' + tradingMode;
 
-        document.getElementById('bankroll').textContent = '$' + s.bankroll.toFixed(2);
-        document.getElementById('bankroll-sub').textContent = 'Peak: $' + s.peak_bankroll.toFixed(2);
+        // Mode notice bar
+        const notice = document.getElementById('mode-notice');
+        notice.className = 'mode-notice ' + tradingMode;
+        if (tradingMode === 'paper') {
+            document.getElementById('mode-notice-icon').textContent = 'Ⓜ';
+            document.getElementById('mode-notice-text').textContent =
+                'Paper mode — trading with Manifold Mana (play currency). Primary metrics below are in Mana. AUD budget tracks API operational costs only.';
+        } else if (tradingMode === 'live') {
+            document.getElementById('mode-notice-icon').textContent = '⚡';
+            document.getElementById('mode-notice-text').textContent =
+                'Live mode — real-money trading on Betfair Exchange. All monetary values in AUD.';
+        } else {
+            notice.className = 'mode-notice'; // hidden
+        }
 
-        const pnlEl = document.getElementById('pnl');
-        pnlEl.textContent = (s.total_pnl >= 0 ? '+$' : '-$') + Math.abs(s.total_pnl).toFixed(2);
-        pnlEl.className = 'card-value ' + (s.total_pnl >= 0 ? 'positive' : 'negative');
+        // ── Card 1: Primary balance ──────────────────────────────────────
+        const balCard = document.getElementById('card-balance');
+        const balLbl  = document.getElementById('lbl-balance');
+        const balVal  = document.getElementById('val-balance');
+        const balSub  = document.getElementById('sub-balance');
 
-        const drawdown = s.peak_bankroll > 0
-            ? ((s.bankroll - s.peak_bankroll) / s.peak_bankroll * 100)
-            : 0;
-        document.getElementById('pnl-sub').textContent = drawdown < 0
-            ? 'Drawdown: ' + drawdown.toFixed(1) + '%'
-            : 'All-time high';
+        if (tradingMode === 'paper') {
+            balCard.classList.add('card-primary');
+            balLbl.textContent = 'Mana Balance';
+            balVal.className = 'card-value mana-color';
+            balVal.textContent = 'M' + Math.round(s.mana_bankroll);
+            balSub.textContent = 'Net P&L: ' + (s.total_mana_pnl >= 0 ? '+' : '') + Math.round(s.total_mana_pnl) + ' Mana';
+        } else {
+            balCard.classList.remove('card-primary');
+            balLbl.textContent = 'AUD Balance';
+            balVal.className = 'card-value';
+            balVal.textContent = '$' + s.bankroll.toFixed(2);
+            balSub.textContent = 'Peak: $' + s.peak_bankroll.toFixed(2);
+        }
 
-        document.getElementById('winrate').textContent = (s.win_rate * 100).toFixed(1) + '%';
-        document.getElementById('winrate-sub').textContent = s.trades_won + 'W / ' + s.trades_lost + 'L';
+        // ── Card 2: P&L ─────────────────────────────────────────────────
+        const pnlLbl = document.getElementById('lbl-pnl');
+        const pnlVal = document.getElementById('val-pnl');
+        const pnlSub = document.getElementById('sub-pnl');
 
-        document.getElementById('trades').textContent = s.trades_placed;
+        if (tradingMode === 'paper') {
+            pnlLbl.textContent = 'Mana P&L';
+            const mp = s.total_mana_pnl;
+            pnlVal.className = 'card-value ' + (mp >= 0 ? 'positive' : 'negative');
+            pnlVal.textContent = (mp >= 0 ? '+' : '') + Math.round(mp) + ' M';
+            pnlSub.textContent = 'vs starting balance';
+        } else {
+            pnlLbl.textContent = 'AUD P&L';
+            const tp = s.total_pnl;
+            pnlVal.className = 'card-value ' + (tp >= 0 ? 'positive' : 'negative');
+            pnlVal.textContent = (tp >= 0 ? '+$' : '-$') + Math.abs(tp).toFixed(2);
+            const drawdown = s.peak_bankroll > 0
+                ? ((s.bankroll - s.peak_bankroll) / s.peak_bankroll * 100)
+                : 0;
+            pnlSub.textContent = drawdown < 0 ? 'Drawdown: ' + drawdown.toFixed(1) + '%' : 'All-time high';
+        }
+
+        // ── Card 3: Win rate ─────────────────────────────────────────────
+        const wrLbl = document.getElementById('lbl-winrate');
+        const wrVal = document.getElementById('val-winrate');
+        const wrSub = document.getElementById('sub-winrate');
+
+        if (tradingMode === 'paper') {
+            wrLbl.textContent = 'Mana Win Rate';
+            wrVal.textContent = (s.mana_win_rate * 100).toFixed(1) + '%';
+            const mw = s.mana_trades_won || 0;
+            const ml = s.mana_trades_lost || 0;
+            wrSub.textContent = mw + 'W / ' + ml + 'L (Mana)';
+        } else {
+            wrLbl.textContent = 'Win Rate';
+            wrVal.textContent = (s.win_rate * 100).toFixed(1) + '%';
+            wrSub.textContent = s.trades_won + 'W / ' + s.trades_lost + 'L';
+        }
+
+        // ── Card 4: Trades ───────────────────────────────────────────────
+        document.getElementById('val-trades').textContent = s.trades_placed;
+
+        // ── Card 6: Cycles ───────────────────────────────────────────────
+        document.getElementById('val-cycles').textContent = s.cycle_count;
+
+        // ── Card 7: AUD Budget (API costs) ──────────────────────────────
+        const budgetLbl = document.getElementById('lbl-budget');
+        const budgetVal = document.getElementById('val-budget');
+        const budgetSub = document.getElementById('sub-budget');
+
+        if (tradingMode === 'paper') {
+            budgetLbl.textContent = 'AUD Budget';
+            budgetVal.textContent = '$' + s.bankroll.toFixed(2);
+            budgetSub.textContent = 'API ops cost: $' + s.total_api_costs.toFixed(4);
+        } else {
+            budgetLbl.textContent = 'Total Costs';
+            budgetVal.textContent = '$' + s.total_costs.toFixed(4);
+            budgetSub.textContent = 'API: $' + s.total_api_costs.toFixed(4) + ' | Comm: $' + s.total_ib_commissions.toFixed(2);
+        }
+
+        // ── Metrics strip ────────────────────────────────────────────────
         const hrs  = Math.floor(s.uptime_secs / 3600);
         const mins = Math.floor((s.uptime_secs % 3600) / 60);
-        document.getElementById('trades-sub').textContent = 'Uptime: ' + hrs + 'h ' + mins + 'm';
+        document.getElementById('m-uptime').textContent = hrs + 'h ' + mins + 'm';
 
-        document.getElementById('cycles').textContent = s.cycle_count;
-        document.getElementById('costs').textContent  = '$' + s.total_costs.toFixed(4);
-        document.getElementById('costs-sub').textContent =
-            'API: $' + s.total_api_costs.toFixed(4) + ' | Comm: $' + s.total_ib_commissions.toFixed(2);
+        if (metrics) {
+            const roi = metrics.roi_pct;
+            const roiEl = document.getElementById('m-roi');
+            roiEl.textContent = (roi >= 0 ? '+' : '') + roi.toFixed(2) + '%';
+            roiEl.className = roi >= 0 ? 'positive' : 'negative';
+        }
+
+        document.getElementById('m-costs').textContent = '$' + s.total_costs.toFixed(4);
+
+        // Cycle balance column header
+        const thCycleBalance = document.getElementById('th-cycle-balance');
+        if (thCycleBalance) thCycleBalance.textContent = 'AUD Budget';
     }
 
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
     // Progress banner
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
     function updateProgress(data) {
         const banner   = document.getElementById('progress-banner');
         const phaseEl  = document.getElementById('progress-phase');
@@ -372,22 +659,16 @@
         banner.style.display = 'flex';
 
         const labels = {
-            scanning:    'SCANNING',
-            enriching:   'ENRICHING',
-            estimating:  'ESTIMATING',
-            selecting:   'SELECTING',
-            executing:   'EXECUTING',
-            reconciling: 'RECONCILING',
+            scanning: 'SCANNING', enriching: 'ENRICHING', estimating: 'ESTIMATING',
+            selecting: 'SELECTING', executing: 'EXECUTING', reconciling: 'RECONCILING',
         };
         phaseEl.textContent = labels[s] || s.replace('_', ' ').toUpperCase();
-        phaseEl.className   = 'progress-phase';
+        phaseEl.className = 'progress-phase';
 
         if (s === 'estimating') {
-            const done  = data.progress.markets_done  || 0;
+            const done = data.progress.markets_done || 0;
             const total = data.progress.markets_total || 0;
-            detailEl.textContent = done < total
-                ? total + ' markets — evaluating...'
-                : total + ' markets evaluated';
+            detailEl.textContent = done < total ? total + ' markets — evaluating…' : total + ' markets evaluated';
         } else if (s === 'enriching') {
             detailEl.textContent = (data.progress.markets_total || 0) + ' markets';
         } else if (s === 'executing') {
@@ -398,9 +679,9 @@
         }
     }
 
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
     // Error log
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
     function updateErrors(errors) {
         const section = document.getElementById('errors-section');
         if (!errors.length) { section.style.display = 'none'; return; }
@@ -409,14 +690,14 @@
         const recent = errors.slice().reverse().slice(0, 10);
         document.getElementById('errors-table').innerHTML = recent.map(e => {
             const t   = new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const msg = e.error.length > 100 ? e.error.substring(0, 100) + '…' : e.error;
+            const msg = e.error.length > 120 ? e.error.substring(0, 120) + '…' : e.error;
             return `<tr><td>${t}</td><td>${e.cycle_number}</td><td class="error-msg" title="${e.error}">${msg}</td></tr>`;
         }).join('');
     }
 
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
     // Cycles table
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
     function updateCycles(cycles) {
         const tbody = document.getElementById('cycles-table');
         if (!cycles.length) {
@@ -436,10 +717,72 @@
         ).join('');
     }
 
-    // ----------------------------------------------------------------
-    // Trades + Auto-exits table
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
+    // Costs breakdown
+    // ─────────────────────────────────────────────────────────────────────
+    function updateCosts(costs) {
+        if (!costs) return;
+        const total = costs.total_costs || 0;
+        const llm   = costs.cost_breakdown.llm || 0;
+        const data  = costs.cost_breakdown.data || 0;
+        const comm  = costs.cost_breakdown.ib_commissions || 0;
 
+        const maxVal = Math.max(llm, data, comm, 0.0001);
+        document.getElementById('cost-llm').textContent  = '$' + llm.toFixed(4);
+        document.getElementById('cost-data').textContent = '$' + data.toFixed(4);
+        document.getElementById('cost-comm').textContent = '$' + comm.toFixed(2);
+        document.getElementById('cost-total').textContent = '$' + total.toFixed(4);
+        document.getElementById('cost-api').textContent   = '$' + (costs.total_api_costs || 0).toFixed(4);
+
+        document.getElementById('bar-llm').style.width  = Math.round((llm  / maxVal) * 100) + '%';
+        document.getElementById('bar-data').style.width = Math.round((data / maxVal) * 100) + '%';
+        document.getElementById('bar-comm').style.width = Math.round((comm / maxVal) * 100) + '%';
+
+        document.getElementById('m-costs').textContent = '$' + total.toFixed(4);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Open positions (from /api/positions — TradeReceipt array)
+    // ─────────────────────────────────────────────────────────────────────
+    function updatePositions(positions) {
+        const tbody = document.getElementById('positions-table');
+        const strip = document.getElementById('m-open');
+
+        if (!positions || !positions.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">No open positions</td></tr>';
+            document.getElementById('positions-count').textContent = '';
+            strip.textContent = '0';
+            return;
+        }
+
+        document.getElementById('positions-count').textContent = '(' + positions.length + ')';
+        strip.textContent = positions.length;
+
+        tbody.innerHTML = positions.map(p => {
+            const isMana = p.currency === 'Mana';
+            const pfx    = isMana ? 'Ⓜ ' : '$';
+            const amt    = isMana ? Math.round(p.amount) : Number(p.amount).toFixed(2);
+            const price  = Number(p.fill_price).toFixed(3);
+            const ts     = new Date(p.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const marketShort = (p.market_id || '').substring(0, 14) + (p.market_id.length > 14 ? '…' : '');
+            const platBadge = isMana
+                ? `<span class="badge badge-manifold">manifold</span>`
+                : `<span class="badge badge-open">${p.platform}</span>`;
+
+            return `<tr>
+                <td>${platBadge}</td>
+                <td title="${p.market_id}">${marketShort}</td>
+                <td>${p.side}</td>
+                <td>${pfx}${amt}</td>
+                <td>${price}</td>
+                <td style="color:var(--dim);font-size:12px;">${ts}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Trades + Auto-exits table
+    // ─────────────────────────────────────────────────────────────────────
     function reasonBadge(reason) {
         if (!reason) return '<span class="badge badge-open">OPEN</span>';
         switch (reason) {
@@ -452,25 +795,19 @@
 
     function pnlCell(finalPnl, currency) {
         if (finalPnl === null || finalPnl === undefined) return '<td style="color:var(--dim)">—</td>';
-        const isMana   = currency === 'Mana';
-        const prefix   = isMana ? '\u24C2' : '$';
-        const absVal   = Math.abs(finalPnl).toFixed(isMana ? 0 : 2);
-        const sign     = finalPnl >= 0 ? '+' : '-';
-        const cls      = finalPnl >= 0 ? 'positive' : 'negative';
-        return `<td class="${cls}">${sign}${prefix}${absVal}</td>`;
+        const isMana = currency === 'Mana';
+        const pfx    = isMana ? 'Ⓜ' : '$';
+        const absVal = Math.abs(finalPnl);
+        const disp   = isMana ? Math.round(absVal) : absVal.toFixed(2);
+        const sign   = finalPnl >= 0 ? '+' : '−';
+        const cls    = finalPnl >= 0 ? 'positive' : 'negative';
+        return `<td class="${cls}">${sign}${pfx}${disp}</td>`;
     }
 
     function updateTrades(trades) {
         const tbody = document.getElementById('trades-table');
 
-        if (!trades.length) {
-            tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No trades yet</td></tr>';
-            document.getElementById('auto-exits').textContent    = '0';
-            document.getElementById('auto-exits-sub').textContent = '0 TP / 0 SL / 0 Time';
-            return;
-        }
-
-        // Count auto-exit events across all trades in the log
+        // Count auto-exits
         let tp = 0, sl = 0, timeLimit = 0;
         trades.forEach(t => {
             if (t.close_reason === 'TakeProfit')  tp++;
@@ -478,31 +815,31 @@
             if (t.close_reason === 'MaxHoldTime') timeLimit++;
         });
         const totalExits = tp + sl + timeLimit;
-        document.getElementById('auto-exits').textContent    = totalExits;
-        document.getElementById('auto-exits-sub').textContent = `${tp} TP / ${sl} SL / ${timeLimit} Time`;
+        document.getElementById('val-auto-exits').textContent     = totalExits;
+        document.getElementById('sub-auto-exits').textContent     = `${tp} TP / ${sl} SL / ${timeLimit} Time`;
 
-        // Display the 20 most recent entries, newest first
+        // Trades count + uptime sub
+        document.getElementById('val-trades').textContent = trades.filter(t => !t.close_reason).length + ' open, ' + totalExits + ' closed';
+
+        if (!trades.length) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No trades yet</td></tr>';
+            return;
+        }
+
         const recent = trades.slice(-20).reverse();
         tbody.innerHTML = recent.map(t => {
-            const isMana    = t.currency === 'Mana';
-            const isClosed  = !!t.close_reason;
-            const rowClass  = isClosed ? 'row-closed' : '';
-
-            // Amount: show absolute value (for close rows amount is the P&L delta stored separately)
-            const amtPrefix = isMana ? '\u24C2' : '$';
-            const amtAbs    = Math.abs(t.amount);
-            const amtStr    = isMana ? amtPrefix + amtAbs.toFixed(0) : amtPrefix + amtAbs.toFixed(2);
-
-            // Strip "-closed" suffix added by process_auto_exits for display
-            const platformDisplay = (t.platform || '').replace(/-closed$/, '');
-
-            // Edge: hide for auto-close rows (they record 0)
-            const edgeStr = (isClosed || t.edge_pct === 0) ? '—' : t.edge_pct.toFixed(1) + '%';
-
+            const isMana   = t.currency === 'Mana';
+            const isClosed = !!t.close_reason;
+            const rowClass = isClosed ? 'row-closed' : '';
+            const pfx      = isMana ? 'Ⓜ' : '$';
+            const absAmt   = Math.abs(t.amount);
+            const amtStr   = isMana ? pfx + Math.round(absAmt) : pfx + absAmt.toFixed(2);
+            const platDisp = (t.platform || '').replace(/-closed$/, '');
+            const edgeStr  = (isClosed || t.edge_pct === 0) ? '—' : t.edge_pct.toFixed(1) + '%';
             const marketShort = (t.market_id || '').substring(0, 10) + '…';
 
             return `<tr class="${rowClass}">
-                <td>${platformDisplay || '—'}</td>
+                <td>${platDisp || '—'}</td>
                 <td title="${t.market_id}">${marketShort}</td>
                 <td>${t.side}</td>
                 <td>${amtStr}</td>
@@ -513,20 +850,20 @@
         }).join('');
     }
 
-    // ----------------------------------------------------------------
-    // Countdown + polling
-    // ----------------------------------------------------------------
+    // ─────────────────────────────────────────────────────────────────────
+    // Polling
+    // ─────────────────────────────────────────────────────────────────────
     function tick() {
         countdownVal--;
         document.getElementById('countdown').textContent = countdownVal;
-        if (countdownVal <= 0) { countdownVal = 30; fetchData(); fetchErrors(); }
-        progressCountdown--;
-        if (progressCountdown <= 0) { progressCountdown = 5; fetchProgress(); }
+        if (countdownVal <= 0) { countdownVal = 30; fetchAll(); fetchErrors(); }
+        progressTick--;
+        if (progressTick <= 0) { progressTick = 5; fetchProgress(); }
     }
 
     // Init
     initChart();
-    fetchData();
+    fetchAll();
     fetchProgress();
     fetchErrors();
     setInterval(tick, 1000);
