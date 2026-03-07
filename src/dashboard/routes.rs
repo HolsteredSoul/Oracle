@@ -186,10 +186,11 @@ pub type AppState = Arc<DashboardState>;
 pub async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     let agent = state.agent.read().await;
     let uptime = (chrono::Utc::now() - agent.start_time).num_seconds();
-    let win_rate = if agent.trades_placed > 0 {
-        agent.trades_won as f64 / agent.trades_placed as f64
-    } else {
-        0.0
+    // Use resolved trades (won + lost) as denominator, not trades_placed which
+    // includes pending bets that haven't resolved yet.
+    let win_rate = {
+        let resolved = agent.trades_won + agent.trades_lost;
+        if resolved > 0 { agent.trades_won as f64 / resolved as f64 } else { 0.0 }
     };
 
     let bankroll = agent.bankroll.to_f64().unwrap_or(0.0);
@@ -282,10 +283,9 @@ pub async fn get_metrics(State(state): State<AppState>) -> Json<MetricsResponse>
     };
 
     Json(MetricsResponse {
-        win_rate: if agent.trades_placed > 0 {
-            agent.trades_won as f64 / agent.trades_placed as f64
-        } else {
-            0.0
+        win_rate: {
+            let resolved = agent.trades_won + agent.trades_lost;
+            if resolved > 0 { agent.trades_won as f64 / resolved as f64 } else { 0.0 }
         },
         trades_placed: agent.trades_placed,
         trades_won: agent.trades_won,

@@ -588,6 +588,34 @@ impl ManifoldClient {
 }
 
 // ---------------------------------------------------------------------------
+// Account balance helpers
+// ---------------------------------------------------------------------------
+
+impl ManifoldClient {
+    /// Fetch the authenticated user's current Mana balance from `GET /v0/me`.
+    ///
+    /// Returns `None` if no API key is configured or the request fails (best-effort).
+    /// This is the ground-truth balance that accounts for CPMM price impact,
+    /// sell-side spread, and any bets placed outside Oracle.
+    pub async fn get_user_balance(&self) -> Option<Decimal> {
+        let api_key = self.api_key.as_ref()?;
+        let resp = self
+            .http
+            .get(format!("{BASE_URL}/me"))
+            .header("Authorization", format!("Key {api_key}"))
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            warn!(status = %resp.status(), "Manifold /v0/me returned non-OK status");
+            return None;
+        }
+        let user: ManifoldUser = resp.json().await.ok()?;
+        Decimal::from_f64(user.balance)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // PredictionPlatform trait implementation
 // ---------------------------------------------------------------------------
 
