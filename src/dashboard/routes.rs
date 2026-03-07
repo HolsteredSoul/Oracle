@@ -87,8 +87,10 @@ impl DashboardState {
 pub struct StatusResponse {
     pub status: String,
     pub trading_mode: String,
+    /// AUD operational budget (API costs only). Not affected by Manifold Mana trades.
     pub bankroll: f64,
     pub peak_bankroll: f64,
+    /// AUD P&L from live real-money trades (Betfair). Zero in paper mode.
     pub total_pnl: f64,
     pub cycle_count: u64,
     pub trades_placed: u64,
@@ -99,6 +101,12 @@ pub struct StatusResponse {
     pub total_ib_commissions: f64,
     pub total_costs: f64,
     pub uptime_secs: i64,
+    /// Live Mana balance for Manifold paper-trading.
+    pub mana_bankroll: f64,
+    /// Net Mana profit/loss from Manifold paper trades.
+    pub total_mana_pnl: f64,
+    /// Mana win rate (paper trades only).
+    pub mana_win_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -185,6 +193,9 @@ pub async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     let total_api_costs = agent.total_api_costs.to_f64().unwrap_or(0.0);
     let total_ib_commissions = agent.total_ib_commissions.to_f64().unwrap_or(0.0);
     let total_costs = agent.total_costs().to_f64().unwrap_or(0.0);
+    let mana_bankroll = agent.mana_bankroll.to_f64().unwrap_or(0.0);
+    let total_mana_pnl = agent.total_mana_pnl.to_f64().unwrap_or(0.0);
+    let mana_win_rate = agent.mana_win_rate();
 
     let trading_mode = state.trading_mode.read().await.clone();
 
@@ -203,6 +214,9 @@ pub async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
         total_ib_commissions,
         total_costs,
         uptime_secs: uptime,
+        mana_bankroll,
+        total_mana_pnl,
+        mana_win_rate,
     })
 }
 
@@ -337,6 +351,9 @@ mod tests {
             total_ib_commissions: 1.00,
             total_costs: 1.50,
             uptime_secs: 3600,
+            mana_bankroll: 714.0,
+            total_mana_pnl: -18.0,
+            mana_win_rate: 0.5,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("ALIVE"));

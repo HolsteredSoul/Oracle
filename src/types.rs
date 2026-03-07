@@ -523,7 +523,10 @@ impl DataContext {
 /// Persistent agent state, saved to JSON after each cycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentState {
+    /// AUD operational budget (pays API costs and live AUD trades).
+    /// Does NOT include Manifold Mana — those are tracked separately.
     pub bankroll: Decimal,
+    /// AUD profit/loss from live (real-money) trades only.
     pub total_pnl: Decimal,
     pub cycle_count: u64,
     pub trades_placed: u64,
@@ -544,6 +547,19 @@ pub struct AgentState {
     /// Defaults to 0.0 (die at $0). Set via config `survival_threshold`.
     #[serde(default)]
     pub survival_threshold: Decimal,
+    /// Live Mana balance for Manifold paper-trading.
+    /// Starts from config `platforms.manifold.mana_bankroll` and is updated
+    /// as Manifold bets resolve. Never affects the AUD survival check.
+    #[serde(default)]
+    pub mana_bankroll: Decimal,
+    /// Net Mana profit/loss from Manifold paper trades.
+    #[serde(default)]
+    pub total_mana_pnl: Decimal,
+    /// Mana bets won / lost counters (separate from AUD win_rate).
+    #[serde(default)]
+    pub mana_trades_won: u64,
+    #[serde(default)]
+    pub mana_trades_lost: u64,
     /// Bets placed but not yet resolved. Persisted so resolution can be
     /// checked across restarts. `#[serde(default)]` handles old JSON files.
     #[serde(default)]
@@ -592,6 +608,10 @@ impl AgentState {
             peak_bankroll: initial_bankroll,
             status: AgentStatus::Alive,
             survival_threshold: Decimal::ZERO,
+            mana_bankroll: Decimal::ZERO,
+            total_mana_pnl: Decimal::ZERO,
+            mana_trades_won: 0,
+            mana_trades_lost: 0,
             open_bets: Vec::new(),
             last_cycle_time: None,
         }
@@ -666,7 +686,10 @@ impl AgentState {
         self.deduct_cost(api_cost, ib_commission)
     }
 
-    /// Record a resolved trade outcome.
+    /// Record a resolved AUD trade outcome (live / Betfair trades only).
+    ///
+    /// Updates the AUD bankroll and survival check. Do NOT call this for
+    /// Manifold Mana trades — use `record_mana_resolution` instead.
     pub fn record_resolution(&mut self, pnl: Decimal, won: bool) {
         self.total_pnl += pnl;
         self.bankroll += pnl;
@@ -676,6 +699,31 @@ impl AgentState {
             self.trades_lost += 1;
         }
         self.update_peak();
+    }
+
+    /// Record a resolved Manifold Mana trade outcome.
+    ///
+    /// Updates `mana_bankroll` and `total_mana_pnl` but does NOT touch the
+    /// AUD `bankroll` or the survival-threshold check. Mana is play money
+    /// and must never kill the agent.
+    pub fn record_mana_resolution(&mut self, pnl: Decimal, won: bool) {
+        self.total_mana_pnl += pnl;
+        self.mana_bankroll += pnl;
+        if won {
+            self.mana_trades_won += 1;
+        } else {
+            self.mana_trades_lost += 1;
+        }
+    }
+
+    /// Mana win rate (paper-trading). Returns 0.0 if no resolved Mana trades.
+    pub fn mana_win_rate(&self) -> f64 {
+        let resolved = self.mana_trades_won + self.mana_trades_lost;
+        if resolved == 0 {
+            0.0
+        } else {
+            (self.mana_trades_won as f64 / resolved as f64) * 100.0
+        }
     }
 
     /// Uptime duration since agent start.
