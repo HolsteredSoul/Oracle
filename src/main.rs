@@ -9,7 +9,7 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use oracle::dashboard::routes::{AppState, BalancePoint, CycleLogEntry, DashboardState, ErrorLogEntry, EvaluationProgress, TradeLogEntry};
 use oracle::dashboard::spawn_dashboard;
@@ -97,6 +97,15 @@ async fn main() -> Result<()> {
         }
     };
     state.survival_threshold = cfg.agent.survival_threshold;
+
+    // Seed Mana bankroll from config if this is a fresh state or an existing state
+    // that predates the mana_bankroll field (backward compat: default is 0).
+    if let Some(configured_mana) = cfg.platforms.manifold.mana_bankroll {
+        if state.mana_bankroll == Decimal::ZERO {
+            state.mana_bankroll = configured_mana;
+            debug!(mana_bankroll = %configured_mana, "Mana bankroll initialised from config");
+        }
+    }
 
     // -- Dashboard -------------------------------------------------------
 
@@ -236,7 +245,6 @@ async fn main() -> Result<()> {
     );
 
     // Executor — create platform clients based on trading_mode
-    let mana_bankroll = cfg.platforms.manifold.mana_bankroll;
     let (executor_manifold, executor_betfair, dry_run) =
         match cfg.agent.trading_mode.as_str() {
             "paper" => {
@@ -335,7 +343,16 @@ async fn main() -> Result<()> {
                     if !resolutions.is_empty() {
                         let mut resolved_ids = std::collections::HashSet::new();
                         for r in &resolutions {
-                            state.record_resolution(r.pnl, r.won);
+                            // Manifold PnL is in Mana — update mana state only,
+                            // never the AUD bankroll or survival check.
+                            state.record_mana_resolution(r.pnl, r.won);
+                            info!(
+                                market_id = %r.market_id,
+                                pnl_mana = %r.pnl,
+                                won = r.won,
+                                mana_bankroll = %state.mana_bankroll,
+                                "Manifold bet resolved"
+                            );
                             resolved_ids.insert(r.bet_id.clone());
                         }
                         state.open_bets.retain(|b| !resolved_ids.contains(&b.order_id));
@@ -361,9 +378,16 @@ async fn main() -> Result<()> {
                     }
                 }
 
+                // Use live mana_bankroll from state so Kelly sizing reflects
+                // actual Mana balance after wins/losses, not the static config value.
+                let mana_for_sizing = if state.mana_bankroll > Decimal::ZERO {
+                    Some(state.mana_bankroll)
+                } else {
+                    None
+                };
                 match run_cycle(
                     &router, &mut enricher, &*llm, &mut orchestrator,
-                    &executor, &mut state, Some(&dashboard_state), mana_bankroll,
+                    &executor, &mut state, Some(&dashboard_state), mana_for_sizing,
                 ).await {
                     Ok(report) => {
                         log_cycle_report(&report);
@@ -595,9 +619,14 @@ async fn process_auto_exits(
             continue;
         }
 
-        // Record the closed position's P&L in agent state
+        // Record the closed position's P&L in agent state.
+        // Manifold is Mana (paper money) — never touch the AUD survival bankroll.
         let won = result.realized_pnl >= Decimal::ZERO;
-        state.record_resolution(result.realized_pnl, won);
+        if result.platform == "manifold" {
+            state.record_mana_resolution(result.realized_pnl, won);
+        } else {
+            state.record_resolution(result.realized_pnl, won);
+        }
         closed_ids.insert(result.bet_id.clone());
 
         // Push a "closed" trade entry to the dashboard

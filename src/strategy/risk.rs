@@ -256,6 +256,10 @@ mod tests {
             peak_bankroll: peak,
             status: AgentStatus::Alive,
             survival_threshold: Decimal::ZERO,
+            mana_bankroll: Decimal::ZERO,
+            total_mana_pnl: Decimal::ZERO,
+            mana_trades_won: 0,
+            mana_trades_lost: 0,
             open_bets: Vec::new(),
             last_cycle_time: None,
         }
