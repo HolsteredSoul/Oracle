@@ -123,12 +123,33 @@ struct ManifoldBetResponse {
     created_time: Option<i64>,
 }
 
+/// Nested `profitCached` object inside the `/v0/me` user response.
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ManifoldProfitCached {
+    /// Cumulative profit/loss from ALL resolved bets on the account (all time).
+    #[serde(default)]
+    all_time: f64,
+}
+
 /// Response from `/v0/me` GET (authenticated user info).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ManifoldUser {
+    /// Liquid Mana available to bet immediately.
     #[serde(default)]
     balance: f64,
+    /// Resolved-bet profit cache. Populated by Manifold; default is zero if absent.
+    #[serde(default)]
+    profit_cached: ManifoldProfitCached,
+}
+
+/// Ground-truth snapshot returned by [`ManifoldClient::get_user_info`].
+pub struct ManifoldUserInfo {
+    /// Liquid Mana balance (available to place new bets).
+    pub liquid_balance: rust_decimal::Decimal,
+    /// Cumulative resolved-bet profit/loss all time (positive = net profit).
+    pub resolved_profit: rust_decimal::Decimal,
 }
 
 /// Response from `/v0/market/{id}` GET — used to check resolution status.
@@ -592,12 +613,16 @@ impl ManifoldClient {
 // ---------------------------------------------------------------------------
 
 impl ManifoldClient {
-    /// Fetch the authenticated user's current Mana balance from `GET /v0/me`.
+    /// Fetch the authenticated user's live account snapshot from `GET /v0/me`.
     ///
-    /// Returns `None` if no API key is configured or the request fails (best-effort).
-    /// This is the ground-truth balance that accounts for CPMM price impact,
-    /// sell-side spread, and any bets placed outside Oracle.
-    pub async fn get_user_balance(&self) -> Option<Decimal> {
+    /// Returns `None` if no API key is configured or the request fails (best-effort,
+    /// never blocks the main loop). This is the ground-truth source that accounts for
+    /// CPMM price impact, sell-side spread, platform fees, and bets placed outside Oracle.
+    ///
+    /// Returns [`ManifoldUserInfo`] with:
+    /// - `liquid_balance`: Mana currently available to bet.
+    /// - `resolved_profit`: Cumulative all-time profit from resolved bets (`profitCached.allTime`).
+    pub async fn get_user_info(&self) -> Option<ManifoldUserInfo> {
         let api_key = self.api_key.as_ref()?;
         let resp = self
             .http
@@ -611,7 +636,10 @@ impl ManifoldClient {
             return None;
         }
         let user: ManifoldUser = resp.json().await.ok()?;
-        Decimal::from_f64(user.balance)
+        Some(ManifoldUserInfo {
+            liquid_balance:  Decimal::from_f64(user.balance).unwrap_or_default(),
+            resolved_profit: Decimal::from_f64(user.profit_cached.all_time).unwrap_or_default(),
+        })
     }
 }
 

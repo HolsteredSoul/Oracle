@@ -109,6 +109,13 @@ pub struct StatusResponse {
     pub total_mana_pnl: f64,
     /// Mana win rate (paper trades only).
     pub mana_win_rate: f64,
+    /// Number of bets currently open (persisted open_bets list length).
+    /// Survives agent restarts — unlike the in-memory recent_trades log.
+    pub open_bets_count: u64,
+    /// Total Mana (or AUD) staked across all open bets.
+    pub open_bets_staked: f64,
+    /// Count of trades resolved (won + lost). Excludes pending bets.
+    pub trades_resolved: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -202,6 +209,11 @@ pub async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
     let mana_bankroll = agent.mana_bankroll.to_f64().unwrap_or(0.0);
     let total_mana_pnl = agent.total_mana_pnl.to_f64().unwrap_or(0.0);
     let mana_win_rate = agent.mana_win_rate();
+    let open_bets_count = agent.open_bets.len() as u64;
+    let open_bets_staked: f64 = agent.open_bets.iter()
+        .map(|b| b.amount.to_f64().unwrap_or(0.0))
+        .sum();
+    let trades_resolved = agent.trades_won + agent.trades_lost;
 
     let trading_mode = state.trading_mode.read().await.clone();
 
@@ -223,6 +235,9 @@ pub async fn get_status(State(state): State<AppState>) -> Json<StatusResponse> {
         mana_bankroll,
         total_mana_pnl,
         mana_win_rate,
+        open_bets_count,
+        open_bets_staked,
+        trades_resolved,
     })
 }
 
@@ -359,6 +374,9 @@ mod tests {
             mana_bankroll: 714.0,
             total_mana_pnl: -18.0,
             mana_win_rate: 0.5,
+            open_bets_count: 3,
+            open_bets_staked: 270.0,
+            trades_resolved: 3,
         };
         let json = serde_json::to_string(&resp).unwrap();
         assert!(json.contains("ALIVE"));

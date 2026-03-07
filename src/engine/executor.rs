@@ -81,13 +81,13 @@ impl Executor {
         }
     }
 
-    /// Fetch the current Mana balance from the Manifold API (best-effort).
+    /// Fetch the live Mana account snapshot from the Manifold API (best-effort).
     ///
-    /// Returns `None` when no Manifold client is configured or the API key is
-    /// absent or the request fails. Used to reconcile `state.mana_bankroll`
-    /// with the ground-truth balance that accounts for price impact and fees.
-    pub async fn get_mana_balance(&self) -> Option<rust_decimal::Decimal> {
-        self.manifold.as_ref()?.get_user_balance().await
+    /// Returns `None` when no Manifold client is configured, the API key is absent,
+    /// or the request fails. Used to reconcile `state.mana_bankroll` (liquid balance)
+    /// and `state.total_mana_pnl` (resolved profit) with Manifold ground-truth.
+    pub async fn get_mana_info(&self) -> Option<crate::platforms::manifold::ManifoldUserInfo> {
+        self.manifold.as_ref()?.get_user_info().await
     }
 
     /// Check which open Manifold bets have resolved and return outcomes.

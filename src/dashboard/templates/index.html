@@ -382,6 +382,9 @@
     let tradingMode = 'dry'; // 'paper' | 'live' | 'dry'
     let balanceChart = null;
     let countdownVal = 30;
+    // Persisted open-bets count from StatusResponse — survives agent restarts
+    // (unlike the in-memory recent_trades which is cleared on restart).
+    let lastOpenBetsCount = 0;
     let progressTick = 5;
 
     // ─────────────────────────────────────────────────────────────────────
@@ -550,12 +553,19 @@
         const balVal  = document.getElementById('val-balance');
         const balSub  = document.getElementById('sub-balance');
 
+        // Store persisted open-bets count for use in updateTrades (which has no status ref)
+        lastOpenBetsCount = s.open_bets_count || 0;
+
         if (tradingMode === 'paper') {
             balCard.classList.add('card-primary');
             balLbl.textContent = 'Mana Balance';
             balVal.className = 'card-value mana-color';
             balVal.textContent = 'M' + Math.round(s.mana_bankroll);
-            balSub.textContent = 'Net P&L: ' + (s.total_mana_pnl >= 0 ? '+' : '') + Math.round(s.total_mana_pnl) + ' Mana';
+            const invested = s.open_bets_staked || 0;
+            const openN    = s.open_bets_count  || 0;
+            balSub.textContent = openN > 0
+                ? 'M' + Math.round(invested) + ' in ' + openN + ' open bets'
+                : 'No open bets';
         } else {
             balCard.classList.remove('card-primary');
             balLbl.textContent = 'AUD Balance';
@@ -818,8 +828,13 @@
         document.getElementById('val-auto-exits').textContent     = totalExits;
         document.getElementById('sub-auto-exits').textContent     = `${tp} TP / ${sl} SL / ${timeLimit} Time`;
 
-        // Trades count + uptime sub
-        document.getElementById('val-trades').textContent = trades.filter(t => !t.close_reason).length + ' open, ' + totalExits + ' closed';
+        // Trades count: use persisted open_bets_count (survives restarts) for open,
+        // and in-memory auto-exit count for closed. Falls back to recent_trades if
+        // lastOpenBetsCount hasn't been set yet (first fetch ordering).
+        const openCount = lastOpenBetsCount > 0
+            ? lastOpenBetsCount
+            : trades.filter(t => !t.close_reason).length;
+        document.getElementById('val-trades').textContent = openCount + ' open, ' + totalExits + ' closed';
 
         if (!trades.length) {
             tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">No trades yet</td></tr>';
