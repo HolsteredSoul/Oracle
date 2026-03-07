@@ -363,6 +363,26 @@ async fn main() -> Result<()> {
                     }
                 }
 
+                // Reconcile mana_bankroll against the actual Manifold account balance.
+                // This corrects for CPMM price-impact (slippage on entry/exit), sell-side
+                // spread, platform fees, and any bets placed outside Oracle. Best-effort:
+                // silently skipped when no API key is configured or the request fails.
+                if cfg.agent.trading_mode == "paper" {
+                    if let Some(actual) = executor.get_mana_balance().await {
+                        let drift = actual - state.mana_bankroll;
+                        if drift.abs() > rust_decimal_macros::dec!(0.5) {
+                            info!(
+                                actual_mana = %actual,
+                                tracked_mana = %state.mana_bankroll,
+                                drift = %drift,
+                                "Reconciling Mana balance with Manifold API"
+                            );
+                            state.total_mana_pnl += drift;
+                            state.mana_bankroll = actual;
+                        }
+                    }
+                }
+
                 // Auto-exit: check open positions for take-profit / stop-loss / time limits.
                 if !state.open_bets.is_empty() {
                     let close_results = auto_exit_engine.check_and_close(&state.open_bets).await;
@@ -461,9 +481,12 @@ async fn run_cycle(
     let markets_scanned = markets.len();
     info!(count = markets_scanned, "Markets scanned");
 
+    // Snapshot enricher cost before enrichment so we can compute the per-cycle delta.
+    let data_cost_before = enricher.total_cost();
+
     if markets.is_empty() {
         let costs = CycleCosts {
-            data_cost: enricher.total_cost(),
+            data_cost: enricher.total_cost() - data_cost_before,
             ..Default::default()
         };
         let exec = oracle::engine::executor::ExecutionReport {
@@ -480,6 +503,7 @@ async fn run_cycle(
     // 2. Enrich with data
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Enriching { markets_total: markets_scanned }; }
     let enriched = enricher.enrich_batch(&markets).await?;
+    // data_cost_before was captured before the empty-markets early return above.
 
     // 3. LLM estimation
     let estimates: Vec<_> = if llm.model_name() != "dummy" {
@@ -517,7 +541,8 @@ async fn run_cycle(
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Reconciling; }
     let costs = CycleCosts {
         llm_cost: estimates.iter().map(|(_, e)| e.cost).sum(),
-        data_cost: enricher.total_cost(),
+        // Use delta from before enrichment to avoid double-counting cumulative enricher cost.
+        data_cost: enricher.total_cost() - data_cost_before,
         ..Default::default()
     };
 

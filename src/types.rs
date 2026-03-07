@@ -716,13 +716,15 @@ impl AgentState {
         }
     }
 
-    /// Mana win rate (paper-trading). Returns 0.0 if no resolved Mana trades.
+    /// Mana win rate (paper-trading). Returns a fraction in [0.0, 1.0].
+    /// Returns 0.0 if no resolved Mana trades.
+    /// Consistent with how the AUD win_rate is computed in dashboard/routes.rs.
     pub fn mana_win_rate(&self) -> f64 {
         let resolved = self.mana_trades_won + self.mana_trades_lost;
         if resolved == 0 {
             0.0
         } else {
-            (self.mana_trades_won as f64 / resolved as f64) * 100.0
+            self.mana_trades_won as f64 / resolved as f64
         }
     }
 
