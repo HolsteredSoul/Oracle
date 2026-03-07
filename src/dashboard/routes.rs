@@ -63,12 +63,14 @@ pub struct DashboardState {
 impl DashboardState {
     pub fn new(initial_state: AgentState) -> Self {
         let initial_balance = initial_state.bankroll.to_f64().unwrap_or(0.0);
+        let initial_mana = initial_state.mana_bankroll.to_f64().unwrap_or(0.0);
         Self {
             agent: RwLock::new(initial_state),
             cycle_log: RwLock::new(Vec::new()),
             balance_history: RwLock::new(vec![BalancePoint {
                 timestamp: chrono::Utc::now().to_rfc3339(),
                 bankroll: initial_balance,
+                mana_bankroll: initial_mana,
             }]),
             recent_trades: RwLock::new(Vec::new()),
             progress: RwLock::new(EvaluationProgress::Idle),
@@ -126,6 +128,9 @@ pub struct CycleLogEntry {
 pub struct BalancePoint {
     pub timestamp: String,
     pub bankroll: f64,
+    /// Live Mana balance at this point — 0 in live/dry mode.
+    #[serde(default)]
+    pub mana_bankroll: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -383,6 +388,7 @@ mod tests {
         let point = BalancePoint {
             timestamp: "2026-02-21T12:00:00Z".into(),
             bankroll: 105.50,
+            mana_bankroll: 714.0,
         };
         let json = serde_json::to_string(&point).unwrap();
         assert!(json.contains("105.5"));
