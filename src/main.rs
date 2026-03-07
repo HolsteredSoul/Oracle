@@ -363,22 +363,31 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                // Reconcile mana_bankroll against the actual Manifold account balance.
-                // This corrects for CPMM price-impact (slippage on entry/exit), sell-side
-                // spread, platform fees, and any bets placed outside Oracle. Best-effort:
-                // silently skipped when no API key is configured or the request fails.
+                // Reconcile mana_bankroll and total_mana_pnl against the actual Manifold
+                // account. Best-effort — silently skipped when no API key is configured
+                // or the request fails.
+                //
+                // mana_bankroll  → liquid balance from GET /v0/me (corrects for price
+                //                  impact, fees, and bets placed outside Oracle).
+                // total_mana_pnl → profitCached.allTime from Manifold (only resolved-bet
+                //                  P&L; NOT affected by bet placements moving money from
+                //                  liquid to invested — those are NOT losses).
                 if cfg.agent.trading_mode == "paper" {
-                    if let Some(actual) = executor.get_mana_balance().await {
-                        let drift = actual - state.mana_bankroll;
-                        if drift.abs() > rust_decimal_macros::dec!(0.5) {
+                    if let Some(info) = executor.get_mana_info().await {
+                        let bal_drift = info.liquid_balance  - state.mana_bankroll;
+                        let pnl_drift = info.resolved_profit - state.total_mana_pnl;
+                        if bal_drift.abs() > rust_decimal_macros::dec!(0.5)
+                            || pnl_drift.abs() > rust_decimal_macros::dec!(0.5)
+                        {
                             info!(
-                                actual_mana = %actual,
-                                tracked_mana = %state.mana_bankroll,
-                                drift = %drift,
-                                "Reconciling Mana balance with Manifold API"
+                                liquid   = %info.liquid_balance,
+                                profit   = %info.resolved_profit,
+                                was_bal  = %state.mana_bankroll,
+                                was_pnl  = %state.total_mana_pnl,
+                                "Reconciling Mana state with Manifold API"
                             );
-                            state.total_mana_pnl += drift;
-                            state.mana_bankroll = actual;
+                            state.mana_bankroll  = info.liquid_balance;
+                            state.total_mana_pnl = info.resolved_profit;
                         }
                     }
                 }
