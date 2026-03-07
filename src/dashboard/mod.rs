@@ -64,6 +64,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/metrics", get(routes::get_metrics))
         .route("/api/progress", get(routes::get_progress))
         .route("/api/errors", get(routes::get_errors))
+        .route("/api/positions", get(routes::get_positions))
         .route("/health", get(routes::health))
         // Dashboard HTML
         .route("/", get(serve_dashboard))

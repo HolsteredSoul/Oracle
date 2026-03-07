@@ -356,6 +356,9 @@ impl AnthropicClient {
         })?;
 
         // Validate probability bounds
+        if prob < 0.01 || prob > 0.99 {
+            warn!(raw_prob = prob, "LLM returned out-of-bounds probability — clamping to [0.01, 0.99]");
+        }
         let prob = prob.clamp(0.01, 0.99);
         let conf = confidence.unwrap_or(0.5).clamp(0.1, 0.99);
 

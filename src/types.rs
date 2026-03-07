@@ -530,6 +530,12 @@ pub struct AgentState {
     pub trades_won: u64,
     pub trades_lost: u64,
     pub total_api_costs: Decimal,
+    /// LLM token costs — subset of total_api_costs.
+    #[serde(default)]
+    pub total_llm_costs: Decimal,
+    /// Data provider API costs (FRED, NewsAPI, etc.) — subset of total_api_costs.
+    #[serde(default)]
+    pub total_data_costs: Decimal,
     pub total_ib_commissions: Decimal,
     pub start_time: DateTime<Utc>,
     pub peak_bankroll: Decimal,
@@ -542,6 +548,11 @@ pub struct AgentState {
     /// checked across restarts. `#[serde(default)]` handles old JSON files.
     #[serde(default)]
     pub open_bets: Vec<TradeReceipt>,
+    /// Timestamp of the last completed cycle. Used on restart to compute
+    /// how much of the scan interval has already elapsed, so the agent
+    /// waits the remainder rather than firing immediately.
+    #[serde(default)]
+    pub last_cycle_time: Option<DateTime<Utc>>,
 }
 
 impl fmt::Display for AgentState {
@@ -574,12 +585,15 @@ impl AgentState {
             trades_won: 0,
             trades_lost: 0,
             total_api_costs: Decimal::ZERO,
+            total_llm_costs: Decimal::ZERO,
+            total_data_costs: Decimal::ZERO,
             total_ib_commissions: Decimal::ZERO,
             start_time: Utc::now(),
             peak_bankroll: initial_bankroll,
             status: AgentStatus::Alive,
             survival_threshold: Decimal::ZERO,
             open_bets: Vec::new(),
+            last_cycle_time: None,
         }
     }
 
@@ -629,8 +643,8 @@ impl AgentState {
         }
     }
 
-    /// Deduct a cost from the bankroll and track it. Returns false if
-    /// the agent has died (bankroll <= survival_threshold).
+    /// Deduct costs from the bankroll and track them by category.
+    /// Returns false if the agent has died (bankroll <= survival_threshold).
     pub fn deduct_cost(&mut self, api_cost: Decimal, ib_commission: Decimal) -> bool {
         self.total_api_costs += api_cost;
         self.total_ib_commissions += ib_commission;
@@ -641,6 +655,15 @@ impl AgentState {
         } else {
             true
         }
+    }
+
+    /// Deduct costs with per-category breakdown (LLM vs data).
+    /// Returns false if the agent has died (bankroll <= survival_threshold).
+    pub fn deduct_costs(&mut self, llm_cost: Decimal, data_cost: Decimal, other_cost: Decimal, ib_commission: Decimal) -> bool {
+        let api_cost = llm_cost + data_cost + other_cost;
+        self.total_llm_costs += llm_cost;
+        self.total_data_costs += data_cost;
+        self.deduct_cost(api_cost, ib_commission)
     }
 
     /// Record a resolved trade outcome.

@@ -14,40 +14,13 @@ use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;
 use tracing::{debug, info, warn};
 
+use crate::config::ScannerConfig;
 use crate::platforms::betfair::BetfairClient;
 use crate::platforms::manifold::ManifoldClient;
 use crate::platforms::metaculus::MetaculusClient;
 use crate::platforms::polymarket::PolymarketClient;
 use crate::platforms::PredictionPlatform;
 use crate::types::{CrossReferences, Market};
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-/// Minimum similarity score (0.0–1.0) to consider two questions as
-/// referring to the same underlying event.
-const MATCH_THRESHOLD: f64 = 0.45;
-
-/// Minimum liquidity (or forecaster count for Metaculus) to keep a market.
-const MIN_LIQUIDITY: Decimal = dec!(5.0);
-
-/// Maximum hours until deadline — skip markets closing too far out
-/// (reduces noise from long-dated, low-activity markets).
-const MAX_HOURS_TO_DEADLINE: f64 = 24.0 * 365.0; // 1 year
-
-/// Minimum hours until deadline — skip markets about to close
-/// (not enough time to act on information).
-const MIN_HOURS_TO_DEADLINE: f64 = 1.0;
-
-/// Maximum markets passed to the enrichment and LLM estimation stages.
-///
-/// The scanner sorts by priority score first, so the top N are the richest
-/// candidates (cross-referenced, liquid, price-central). Capping here
-/// concentrates the LLM budget on the highest-value opportunities and
-/// directly reduces per-cycle cost. At batch_size=5 and 80 markets,
-/// this means 16 LLM batch calls instead of 44 for 218 markets.
-const MAX_MARKETS_TO_PROCESS: usize = 80;
 
 // ---------------------------------------------------------------------------
 // Text similarity
@@ -110,6 +83,7 @@ fn text_similarity(a: &str, b: &str) -> f64 {
 /// Unified market scanner that aggregates and cross-references markets
 /// from all enabled platforms.
 pub struct MarketRouter {
+    config: ScannerConfig,
     manifold: Option<ManifoldClient>,
     metaculus: Option<MetaculusClient>,
     polymarket: Option<PolymarketClient>,
@@ -124,7 +98,17 @@ impl MarketRouter {
         manifold: Option<ManifoldClient>,
         metaculus: Option<MetaculusClient>,
     ) -> Self {
+        Self::with_config(ScannerConfig::default(), manifold, metaculus)
+    }
+
+    /// Create a new router using explicit scanner configuration.
+    pub fn with_config(
+        config: ScannerConfig,
+        manifold: Option<ManifoldClient>,
+        metaculus: Option<MetaculusClient>,
+    ) -> Self {
         Self {
+            config,
             manifold,
             metaculus,
             polymarket: None,
@@ -139,6 +123,23 @@ impl MarketRouter {
         metaculus: Option<MetaculusClient>,
     ) -> Self {
         Self {
+            config: ScannerConfig::default(),
+            manifold,
+            metaculus,
+            polymarket: None,
+            betfair: Some(betfair),
+        }
+    }
+
+    /// Create a router with Betfair using explicit scanner configuration.
+    pub fn with_betfair_config(
+        config: ScannerConfig,
+        betfair: BetfairClient,
+        manifold: Option<ManifoldClient>,
+        metaculus: Option<MetaculusClient>,
+    ) -> Self {
+        Self {
+            config,
             manifold,
             metaculus,
             polymarket: None,
@@ -153,6 +154,7 @@ impl MarketRouter {
         manifold: Option<ManifoldClient>,
     ) -> Self {
         Self {
+            config: ScannerConfig::default(),
             manifold,
             metaculus,
             polymarket: Some(polymarket),
@@ -204,7 +206,7 @@ impl MarketRouter {
         );
 
         // 2. Cross-reference: attach Metaculus forecasts to matching Manifold markets
-        Self::cross_reference(&mut manifold_markets, &metaculus_markets);
+        Self::cross_reference(&mut manifold_markets, &metaculus_markets, self.config.match_threshold);
 
         // 3. Merge all markets into a single list
         //    Betfair & Polymarket markets are primary (real-money execution venues).
@@ -219,7 +221,7 @@ impl MarketRouter {
         for mc in &metaculus_markets {
             let already_referenced = all_markets.iter().any(|m| {
                 m.cross_refs.metaculus_prob.is_some()
-                    && text_similarity(&m.question, &mc.question) >= MATCH_THRESHOLD
+                    && text_similarity(&m.question, &mc.question) >= self.config.match_threshold
             });
             if !already_referenced {
                 all_markets.push(mc.clone());
@@ -248,7 +250,7 @@ impl MarketRouter {
         // 6. Cap to top-N for downstream enrichment + LLM estimation.
         //    Sorted by priority score above, so we drop the lowest-ranked markets.
         let pre_cap = all_markets.len();
-        all_markets.truncate(MAX_MARKETS_TO_PROCESS);
+        all_markets.truncate(self.config.max_markets_to_process);
 
         info!(
             total = pre_cap,
@@ -293,7 +295,7 @@ impl MarketRouter {
 
     /// For each Manifold market, find the best-matching Metaculus question
     /// and attach its community forecast as a cross-reference.
-    fn cross_reference(manifold: &mut [Market], metaculus: &[Market]) {
+    fn cross_reference(manifold: &mut [Market], metaculus: &[Market], match_threshold: f64) {
         if metaculus.is_empty() {
             return;
         }
@@ -321,7 +323,7 @@ impl MarketRouter {
                 }
             }
 
-            if best_score >= MATCH_THRESHOLD {
+            if best_score >= match_threshold {
                 if let Some(mc) = best_match {
                     mf_market.cross_refs.metaculus_prob = mc.cross_refs.metaculus_prob;
                     mf_market.cross_refs.metaculus_forecasters =
@@ -354,12 +356,15 @@ impl MarketRouter {
     /// or already resolved.
     fn filter_markets(&self, markets: Vec<Market>) -> Vec<Market> {
         let now = Utc::now();
+        let min_liquidity = self.config.min_liquidity;
+        let min_hours = self.config.min_hours_to_deadline;
+        let max_hours = self.config.max_hours_to_deadline;
 
         markets
             .into_iter()
             .filter(|m| {
                 // Liquidity check
-                if m.liquidity < MIN_LIQUIDITY {
+                if m.liquidity < min_liquidity {
                     return false;
                 }
 
@@ -367,10 +372,10 @@ impl MarketRouter {
                 let hours_remaining =
                     (m.deadline - now).num_minutes() as f64 / 60.0;
 
-                if hours_remaining < MIN_HOURS_TO_DEADLINE {
+                if hours_remaining < min_hours {
                     return false;
                 }
-                if hours_remaining > MAX_HOURS_TO_DEADLINE {
+                if hours_remaining > max_hours {
                     return false;
                 }
 
@@ -559,7 +564,7 @@ mod tests {
             150,
         )];
 
-        MarketRouter::cross_reference(&mut manifold, &metaculus);
+        MarketRouter::cross_reference(&mut manifold, &metaculus, 0.45);
 
         assert_eq!(manifold[0].cross_refs.metaculus_prob, Some(d(0.68)));
         assert_eq!(manifold[0].cross_refs.metaculus_forecasters, Some(150));
@@ -584,7 +589,7 @@ mod tests {
             80,
         )];
 
-        MarketRouter::cross_reference(&mut manifold, &metaculus);
+        MarketRouter::cross_reference(&mut manifold, &metaculus, 0.45);
 
         assert!(manifold[0].cross_refs.metaculus_prob.is_some(),
             "Should have matched on similar Trump/second/term wording");
@@ -609,7 +614,7 @@ mod tests {
             200,
         )];
 
-        MarketRouter::cross_reference(&mut manifold, &metaculus);
+        MarketRouter::cross_reference(&mut manifold, &metaculus, 0.45);
 
         assert!(manifold[0].cross_refs.metaculus_prob.is_none());
     }
@@ -634,7 +639,7 @@ mod tests {
             50,
         )];
 
-        MarketRouter::cross_reference(&mut manifold, &metaculus);
+        MarketRouter::cross_reference(&mut manifold, &metaculus, 0.45);
 
         // Should NOT match due to category mismatch
         assert!(manifold[0].cross_refs.metaculus_prob.is_none());
@@ -646,7 +651,7 @@ mod tests {
             "mf1", "manifold", "Test?",
             MarketCategory::Other, 0.5, 100.0, 720.0,
         )];
-        MarketRouter::cross_reference(&mut manifold, &[]);
+        MarketRouter::cross_reference(&mut manifold, &[], 0.45);
         assert!(manifold[0].cross_refs.metaculus_prob.is_none());
     }
 

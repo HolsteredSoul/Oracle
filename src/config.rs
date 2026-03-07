@@ -6,6 +6,7 @@
 
 use anyhow::{Context, Result};
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -19,6 +20,10 @@ pub struct AppConfig {
     pub risk: RiskConfig,
     #[serde(default)]
     pub strategy: StrategyConfig,
+    #[serde(default)]
+    pub scanner: ScannerConfig,
+    #[serde(default)]
+    pub enricher: EnricherConfig,
     pub data_sources: DataSourcesConfig,
     pub dashboard: DashboardConfig,
     pub alerts: AlertsConfig,
@@ -201,6 +206,76 @@ impl StrategyConfig {
     fn default_min_close_stake() -> Decimal { rust_decimal_macros::dec!(2.0) }
 }
 
+/// Scanner / market-router configuration ([scanner] section).
+#[derive(Debug, Deserialize, Clone)]
+pub struct ScannerConfig {
+    /// Minimum Jaccard-based similarity score (0–1) to cross-reference two markets.
+    #[serde(default = "ScannerConfig::default_match_threshold")]
+    pub match_threshold: f64,
+    /// Minimum liquidity (or forecaster count for Metaculus) to keep a market.
+    #[serde(default = "ScannerConfig::default_min_liquidity")]
+    pub min_liquidity: Decimal,
+    /// Maximum hours until deadline — markets closing later than this are skipped.
+    #[serde(default = "ScannerConfig::default_max_hours_to_deadline")]
+    pub max_hours_to_deadline: f64,
+    /// Minimum hours until deadline — markets closing sooner than this are skipped.
+    #[serde(default = "ScannerConfig::default_min_hours_to_deadline")]
+    pub min_hours_to_deadline: f64,
+    /// Maximum markets passed to the enrichment and LLM estimation stages.
+    #[serde(default = "ScannerConfig::default_max_markets_to_process")]
+    pub max_markets_to_process: usize,
+}
+
+impl Default for ScannerConfig {
+    fn default() -> Self {
+        Self {
+            match_threshold: 0.45,
+            min_liquidity: dec!(5.0),
+            max_hours_to_deadline: 24.0 * 365.0,
+            min_hours_to_deadline: 1.0,
+            max_markets_to_process: 80,
+        }
+    }
+}
+
+impl ScannerConfig {
+    fn default_match_threshold() -> f64 { 0.45 }
+    fn default_min_liquidity() -> Decimal { dec!(5.0) }
+    fn default_max_hours_to_deadline() -> f64 { 24.0 * 365.0 }
+    fn default_min_hours_to_deadline() -> f64 { 1.0 }
+    fn default_max_markets_to_process() -> usize { 80 }
+}
+
+/// Enricher cache TTL configuration ([enricher] section).
+#[derive(Debug, Deserialize, Clone)]
+pub struct EnricherConfig {
+    /// Default cache TTL in minutes for data contexts.
+    #[serde(default = "EnricherConfig::default_default_cache_ttl_mins")]
+    pub default_cache_ttl_mins: i64,
+    /// Cache TTL in minutes for weather data (slower to change).
+    #[serde(default = "EnricherConfig::default_weather_cache_ttl_mins")]
+    pub weather_cache_ttl_mins: i64,
+    /// Cache TTL in minutes for news/politics data (fast-moving).
+    #[serde(default = "EnricherConfig::default_news_cache_ttl_mins")]
+    pub news_cache_ttl_mins: i64,
+}
+
+impl Default for EnricherConfig {
+    fn default() -> Self {
+        Self {
+            default_cache_ttl_mins: 30,
+            weather_cache_ttl_mins: 60,
+            news_cache_ttl_mins: 15,
+        }
+    }
+}
+
+impl EnricherConfig {
+    fn default_default_cache_ttl_mins() -> i64 { 30 }
+    fn default_weather_cache_ttl_mins() -> i64 { 60 }
+    fn default_news_cache_ttl_mins() -> i64 { 15 }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct DataSourcesConfig {
     pub openweathermap_key_env: Option<String>,
@@ -236,7 +311,37 @@ impl AppConfig {
             .with_context(|| format!("Failed to read config file: {path}"))?;
         let config: AppConfig = toml::from_str(&contents)
             .with_context(|| format!("Failed to parse config file: {path}"))?;
+        config.validate()?;
         Ok(config)
+    }
+
+    /// Validate that key config values are within sensible bounds.
+    fn validate(&self) -> Result<()> {
+        anyhow::ensure!(
+            self.agent.initial_bankroll > Decimal::ZERO,
+            "agent.initial_bankroll must be > 0"
+        );
+        anyhow::ensure!(
+            self.risk.kelly_multiplier > Decimal::ZERO,
+            "risk.kelly_multiplier must be > 0"
+        );
+        anyhow::ensure!(
+            self.risk.kelly_multiplier <= Decimal::ONE,
+            "risk.kelly_multiplier must be ≤ 1"
+        );
+        anyhow::ensure!(
+            self.risk.max_bet_pct > Decimal::ZERO && self.risk.max_bet_pct <= Decimal::ONE,
+            "risk.max_bet_pct must be in (0, 1]"
+        );
+        anyhow::ensure!(
+            self.scanner.match_threshold > 0.0 && self.scanner.match_threshold <= 1.0,
+            "scanner.match_threshold must be in (0, 1]"
+        );
+        anyhow::ensure!(
+            self.scanner.max_markets_to_process > 0,
+            "scanner.max_markets_to_process must be > 0"
+        );
+        Ok(())
     }
 
     /// Resolve an environment variable name to its value.
@@ -261,7 +366,7 @@ mod tests {
             assert_eq!(cfg.agent.scan_interval_secs, 600);
             assert!(cfg.agent.initial_bankroll > Decimal::ZERO);
             assert_eq!(cfg.llm.provider, "openrouter");
-            assert!(cfg.platforms.forecastex.enabled);
+            assert!(!cfg.platforms.forecastex.enabled); // Phase 2 stub — disabled
             assert!(cfg.risk.kelly_multiplier > Decimal::ZERO);
             assert!(cfg.risk.kelly_multiplier <= Decimal::ONE);
         }

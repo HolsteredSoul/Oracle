@@ -497,7 +497,10 @@ impl AutoExitEngine {
             return Some(CloseReason::StopLoss);
         }
         if self.config.max_hold_hours > 0 {
-            let hold_hours = (Utc::now() - bet.timestamp).num_hours() as u64;
+            let hold_hours = match (Utc::now() - bet.timestamp).to_std() {
+                Ok(d) => d.as_secs() / 3600,
+                Err(_) => return None, // timestamp is in the future — skip (clock drift)
+            };
             if hold_hours >= self.config.max_hold_hours {
                 return Some(CloseReason::MaxHoldTime);
             }

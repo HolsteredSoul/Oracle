@@ -246,12 +246,15 @@ mod tests {
             trades_won: 0,
             trades_lost: 0,
             total_api_costs: Decimal::ZERO,
+            total_llm_costs: Decimal::ZERO,
+            total_data_costs: Decimal::ZERO,
             total_ib_commissions: Decimal::ZERO,
             start_time: Utc::now(),
             peak_bankroll: bankroll,
             status: AgentStatus::Alive,
             survival_threshold: Decimal::ZERO,
             open_bets: Vec::new(),
+            last_cycle_time: None,
         }
     }
 

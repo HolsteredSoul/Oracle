@@ -83,9 +83,8 @@ impl Accountant {
     ) -> CycleReport {
         let bankroll_before = state.bankroll;
 
-        // Deduct costs (this also triggers death if bankroll <= 0)
-        let api_cost = costs.llm_cost + costs.data_cost + costs.other;
-        let alive = state.deduct_cost(api_cost, costs.ib_commissions);
+        // Deduct costs with per-category breakdown for dashboard reporting
+        let alive = state.deduct_costs(costs.llm_cost, costs.data_cost, costs.other, costs.ib_commissions);
 
         // Record trades
         state.trades_placed += execution.executed.len() as u64;

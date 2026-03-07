@@ -20,7 +20,7 @@ batch_size = 5                 # markets per LLM call — smaller = reliable par
 # Phase 2A — ForecastEx integration is not yet active. Client is a stub.
 # These settings are reserved for future IBKR event-contract execution.
 [platforms.forecastex]
-enabled = true
+enabled = false  # Phase 2 stub — not yet implemented; see src/platforms/forecastex.rs
 ib_host = "127.0.0.1"
 ib_port = 4002                 # IB Gateway paper=4002, live=4001
 ib_client_id = 1
@@ -72,6 +72,18 @@ stop_loss_percent = -10.0      # Close if unrealized P&L <= -10%
 max_hold_hours = 48            # Hard time limit in hours (0 = disabled)
 min_close_stake = 2.0          # AUD safety buffer above Betfair minimum ($1.00)
 auto_exit_dry_run = false      # true = log decisions only, place no real orders
+
+[scanner]
+match_threshold = 0.45          # Jaccard similarity minimum to cross-reference two markets
+min_liquidity = 5.0             # Minimum volume/forecasters to include a market
+max_hours_to_deadline = 8760.0  # Skip markets closing > 1 year out (365 * 24)
+min_hours_to_deadline = 1.0     # Skip markets closing within the next hour
+max_markets_to_process = 80     # Cap passed to enrichment+LLM stage per cycle
+
+[enricher]
+default_cache_ttl_mins = 30     # Default data context TTL
+weather_cache_ttl_mins = 60     # Weather changes slowly — longer cache
+news_cache_ttl_mins = 15        # News/politics is fast-moving — shorter cache
 
 [dashboard]
 enabled = true
