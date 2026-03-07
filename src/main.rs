@@ -69,7 +69,19 @@ async fn main() -> Result<()> {
     // -- Restore or create state -----------------------------------------
 
     let mut state = match storage::load_state(None)? {
-        Some(s) => {
+        Some(mut s) => {
+            // A restart is an explicit user action — if the bankroll is still
+            // above the survival threshold, reset a persisted Died status so
+            // the agent can trade again. If it's truly out of money the first
+            // cycle's deduct_cost will mark it dead again immediately.
+            if s.status == AgentStatus::Died && s.bankroll > s.survival_threshold {
+                warn!(
+                    bankroll = %s.bankroll,
+                    threshold = %s.survival_threshold,
+                    "Restarting from Died state — bankroll is above threshold, resetting to Alive"
+                );
+                s.status = AgentStatus::Alive;
+            }
             info!(
                 bankroll = %s.bankroll,
                 cycles = s.cycle_count,
@@ -279,14 +291,36 @@ async fn main() -> Result<()> {
     // -- Main loop -------------------------------------------------------
 
     let scan_interval = Duration::from_secs(cfg.agent.scan_interval_secs);
-    let mut interval = tokio::time::interval(scan_interval);
+
+    // If we have a recorded last-cycle time, wait out whatever remains of the
+    // current interval before firing the first tick. This prevents an immediate
+    // re-scan when the agent is restarted shortly after a recent cycle.
+    let initial_delay = state.last_cycle_time
+        .map(|t| {
+            let elapsed_secs = (chrono::Utc::now() - t).num_seconds().max(0) as u64;
+            scan_interval.saturating_sub(Duration::from_secs(elapsed_secs))
+        })
+        .unwrap_or(Duration::ZERO); // No prior run → fire first cycle immediately
+
+    let next_tick = tokio::time::Instant::now() + initial_delay;
+    let mut interval = tokio::time::interval_at(next_tick, scan_interval);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     let shutdown = tokio::signal::ctrl_c();
     tokio::pin!(shutdown);
 
-    info!(
-        interval_secs = cfg.agent.scan_interval_secs,
-        "Entering main loop. Press Ctrl+C to stop."
-    );
+    if initial_delay.is_zero() {
+        info!(
+            interval_secs = cfg.agent.scan_interval_secs,
+            "Entering main loop. Press Ctrl+C to stop."
+        );
+    } else {
+        info!(
+            interval_secs = cfg.agent.scan_interval_secs,
+            wait_secs = initial_delay.as_secs(),
+            "Entering main loop — waiting for remainder of last interval. Press Ctrl+C to stop."
+        );
+    }
 
     loop {
         tokio::select! {
@@ -336,7 +370,7 @@ async fn main() -> Result<()> {
                         log_cycle_report(&report);
                         update_dashboard(&dashboard_state, &state, &report).await;
                         *dashboard_state.progress.write().await = EvaluationProgress::Idle;
-                        // Persist state after each cycle
+                        state.last_cycle_time = Some(chrono::Utc::now());
                         if let Err(e) = storage::save_state(&state, None) {
                             error!(error = %e, "Failed to save state");
                         }
@@ -361,6 +395,7 @@ async fn main() -> Result<()> {
                         }
                         *dashboard_state.progress.write().await = EvaluationProgress::Idle;
                         state.cycle_count += 1;
+                        state.last_cycle_time = Some(chrono::Utc::now());
                     }
                 }
             }

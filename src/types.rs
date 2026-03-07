@@ -542,6 +542,11 @@ pub struct AgentState {
     /// checked across restarts. `#[serde(default)]` handles old JSON files.
     #[serde(default)]
     pub open_bets: Vec<TradeReceipt>,
+    /// Timestamp of the last completed cycle. Used on restart to compute
+    /// how much of the scan interval has already elapsed, so the agent
+    /// waits the remainder rather than firing immediately.
+    #[serde(default)]
+    pub last_cycle_time: Option<DateTime<Utc>>,
 }
 
 impl fmt::Display for AgentState {
@@ -580,6 +585,7 @@ impl AgentState {
             status: AgentStatus::Alive,
             survival_threshold: Decimal::ZERO,
             open_bets: Vec::new(),
+            last_cycle_time: None,
         }
     }
 

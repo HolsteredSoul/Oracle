@@ -252,6 +252,7 @@ mod tests {
             status: AgentStatus::Alive,
             survival_threshold: Decimal::ZERO,
             open_bets: Vec::new(),
+            last_cycle_time: None,
         }
     }
 
