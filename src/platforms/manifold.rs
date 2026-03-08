@@ -139,6 +139,9 @@ struct ManifoldUser {
     /// Liquid Mana available to bet immediately.
     #[serde(default)]
     balance: f64,
+    /// Current market value of all open (unresolved) share positions.
+    #[serde(default)]
+    investment_value: f64,
     /// Resolved-bet profit cache. Populated by Manifold; default is zero if absent.
     #[serde(default)]
     profit_cached: ManifoldProfitCached,
@@ -148,6 +151,8 @@ struct ManifoldUser {
 pub struct ManifoldUserInfo {
     /// Liquid Mana balance (available to place new bets).
     pub liquid_balance: rust_decimal::Decimal,
+    /// Current market value of all open (unresolved) share positions.
+    pub investment_value: rust_decimal::Decimal,
     /// Cumulative resolved-bet profit/loss all time (positive = net profit).
     pub resolved_profit: rust_decimal::Decimal,
 }
@@ -637,8 +642,9 @@ impl ManifoldClient {
         }
         let user: ManifoldUser = resp.json().await.ok()?;
         Some(ManifoldUserInfo {
-            liquid_balance:  Decimal::from_f64(user.balance).unwrap_or_default(),
-            resolved_profit: Decimal::from_f64(user.profit_cached.all_time).unwrap_or_default(),
+            liquid_balance:   Decimal::from_f64(user.balance).unwrap_or_default(),
+            investment_value: Decimal::from_f64(user.investment_value).unwrap_or_default(),
+            resolved_profit:  Decimal::from_f64(user.profit_cached.all_time).unwrap_or_default(),
         })
     }
 }

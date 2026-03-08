@@ -372,6 +372,10 @@ async fn main() -> Result<()> {
                 // total_mana_pnl → profitCached.allTime from Manifold (only resolved-bet
                 //                  P&L; NOT affected by bet placements moving money from
                 //                  liquid to invested — those are NOT losses).
+                //
+                // mana_gross_equity → liquid balance + current value of open positions.
+                //                     This is the true bankroll for Kelly sizing.
+                let mut mana_gross_equity: Option<Decimal> = None;
                 if cfg.agent.trading_mode == "paper" {
                     if let Some(info) = executor.get_mana_info().await {
                         let bal_drift = info.liquid_balance  - state.mana_bankroll;
@@ -380,15 +384,20 @@ async fn main() -> Result<()> {
                             || pnl_drift.abs() > rust_decimal_macros::dec!(0.5)
                         {
                             info!(
-                                liquid   = %info.liquid_balance,
-                                profit   = %info.resolved_profit,
-                                was_bal  = %state.mana_bankroll,
-                                was_pnl  = %state.total_mana_pnl,
+                                liquid        = %info.liquid_balance,
+                                investment    = %info.investment_value,
+                                gross_equity  = %(info.liquid_balance + info.investment_value),
+                                profit        = %info.resolved_profit,
+                                was_bal       = %state.mana_bankroll,
+                                was_pnl       = %state.total_mana_pnl,
                                 "Reconciling Mana state with Manifold API"
                             );
                             state.mana_bankroll  = info.liquid_balance;
                             state.total_mana_pnl = info.resolved_profit;
                         }
+                        // Always capture gross equity for this cycle's Kelly sizing,
+                        // even when drift is below the log threshold.
+                        mana_gross_equity = Some(info.liquid_balance + info.investment_value);
                     }
                 }
 
@@ -407,13 +416,11 @@ async fn main() -> Result<()> {
                     }
                 }
 
-                // Use live mana_bankroll from state so Kelly sizing reflects
-                // actual Mana balance after wins/losses, not the static config value.
-                let mana_for_sizing = if state.mana_bankroll > Decimal::ZERO {
-                    Some(state.mana_bankroll)
-                } else {
-                    None
-                };
+                // Use gross equity (liquid balance + open position value) for Kelly sizing
+                // so bet sizes reflect the true bankroll, not just available cash.
+                // Falls back to state.mana_bankroll (liquid only) when the API is unavailable.
+                let mana_for_sizing = mana_gross_equity
+                    .or_else(|| if state.mana_bankroll > Decimal::ZERO { Some(state.mana_bankroll) } else { None });
                 match run_cycle(
                     &router, &mut enricher, &*llm, &mut orchestrator,
                     &executor, &mut state, Some(&dashboard_state), mana_for_sizing,
@@ -529,6 +536,11 @@ async fn run_cycle(
 
     // 4-5. Edge detection → Kelly sizing → risk approval (via orchestrator)
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Selecting { markets_total: markets_scanned }; }
+    // Sync exposure counters to actual open positions before making new decisions.
+    // Without this, the risk manager's internal totals accumulate indefinitely
+    // (resolved/auto-exited positions are never subtracted), causing progressive
+    // rejection of new bets even when real exposure is well within limits.
+    orchestrator.sync_exposure_from_state(state);
     orchestrator.reset_cycle();
     let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state, mana_bankroll);
     // decisions contains KellyRejected + RiskRejected + Selected — all edges
