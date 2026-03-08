@@ -127,12 +127,35 @@ impl EdgeDetector {
             return None;
         }
 
-        // Low confidence estimates need extra-large edges
-        if estimate.confidence < dec!(0.3) && abs_edge < threshold * dec!(2) {
+        // Absolute confidence floor — the LLM has no useful signal below this.
+        if estimate.confidence < dec!(0.10) {
             debug!(
                 market_id = %market.id,
                 confidence = %estimate.confidence,
-                "Low confidence, requiring double threshold"
+                "Confidence below absolute floor (0.10) — rejected"
+            );
+            return None;
+        }
+
+        // Graduated confidence gate: low confidence requires a proportionally
+        // larger edge before we act.
+        //
+        // effective_threshold = base × (0.5 + 0.5 × confidence)
+        //   confidence = 1.0 → multiplier = 1.00 → full base threshold
+        //   confidence = 0.5 → multiplier = 0.75 → 25% stricter
+        //   confidence = 0.1 → multiplier = 0.55 → 45% stricter
+        //
+        // This replaces the previous binary cliff at 0.30 (which jumped from
+        // 1× to 2× threshold at a single rounding boundary).
+        let confidence_multiplier = dec!(0.5) + dec!(0.5) * estimate.confidence;
+        let effective_threshold = threshold * confidence_multiplier;
+        if abs_edge < effective_threshold {
+            debug!(
+                market_id = %market.id,
+                edge = %format!("{:.1}%", (abs_edge * dec!(100)).to_f64().unwrap_or(0.0)),
+                effective_threshold = %format!("{:.1}%", (effective_threshold * dec!(100)).to_f64().unwrap_or(0.0)),
+                confidence = %format!("{:.0}%", (estimate.confidence * dec!(100)).to_f64().unwrap_or(0.0)),
+                "Edge below confidence-adjusted threshold"
             );
             return None;
         }
@@ -245,18 +268,36 @@ mod tests {
     }
 
     #[test]
-    fn test_low_confidence_needs_double_threshold() {
+    fn test_low_confidence_graduated_threshold() {
+        let detector = EdgeDetector::new(EdgeConfig::default());
+        // Weather base threshold = 6%.
+        // At confidence=0.20: multiplier = 0.5 + 0.5*0.20 = 0.60
+        // effective_threshold = 0.06 * 0.60 = 0.036
+        let market = make_market("m1", MarketCategory::Weather, dec!(0.40));
+
+        // 3.5% edge — above effective threshold (3.6%) → but check below noise floor first.
+        // min_edge = 0.03: 3.5% > 3%, so noise floor passes.
+        // 3.5% < 3.6% effective threshold → should be rejected.
+        let estimate_small = make_estimate(dec!(0.435), dec!(0.20));
+        assert!(detector.detect_edge(&market, &estimate_small).is_none());
+
+        // 10% edge with confidence=0.20 → effective_threshold=3.6% → 10% > 3.6% → accepted.
+        let estimate_large = make_estimate(dec!(0.50), dec!(0.20));
+        assert!(detector.detect_edge(&market, &estimate_large).is_some());
+    }
+
+    #[test]
+    fn test_absolute_confidence_floor() {
         let detector = EdgeDetector::new(EdgeConfig::default());
         let market = make_market("m1", MarketCategory::Weather, dec!(0.40));
-        // 10% edge but only 0.2 confidence — needs 12% (double 6% threshold)
-        let estimate = make_estimate(dec!(0.50), dec!(0.2));
-        let edge = detector.detect_edge(&market, &estimate);
-        assert!(edge.is_none());
 
-        // 15% edge with 0.2 confidence — now exceeds double threshold
-        let estimate2 = make_estimate(dec!(0.55), dec!(0.2));
-        let edge2 = detector.detect_edge(&market, &estimate2);
-        assert!(edge2.is_some());
+        // Even a huge edge is rejected when confidence < 0.10.
+        let estimate = make_estimate(dec!(0.90), dec!(0.05)); // 50% edge, 5% confidence
+        assert!(detector.detect_edge(&market, &estimate).is_none());
+
+        // Just above the floor: should be accepted (edge is large enough).
+        let estimate2 = make_estimate(dec!(0.90), dec!(0.10));
+        assert!(detector.detect_edge(&market, &estimate2).is_some());
     }
 
     #[test]

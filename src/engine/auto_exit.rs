@@ -56,9 +56,13 @@ impl Default for AutoExitConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            take_profit_percent: dec!(15.0),
-            stop_loss_percent: dec!(-10.0),
-            max_hold_hours: 48,
+            // Manifold CPMM markets swing ±20 % intraday on thin books.
+            // The old ±10/+15 defaults stopped out real edges within the first
+            // cycle. These wider values give positions room to breathe while
+            // still cutting catastrophic losses and locking in large wins.
+            take_profit_percent: dec!(40.0),
+            stop_loss_percent: dec!(-25.0),
+            max_hold_hours: 168,  // 1 week — let markets move toward resolution
             min_close_stake: dec!(2.0),
             dry_run: false,
         }
@@ -555,9 +559,13 @@ mod tests {
         let engine = AutoExitEngine::new(None, None, config);
         let bet = make_bet("manifold", Side::Yes, dec!(100), dec!(0.5), 1);
 
-        // -15% < -10% stop_loss
-        let reason = engine.check_triggers(&bet, dec!(-15.0));
+        // -30% < -25% stop_loss threshold
+        let reason = engine.check_triggers(&bet, dec!(-30.0));
         assert_eq!(reason, Some(CloseReason::StopLoss));
+
+        // -15% is within the new wider band — should NOT trigger
+        let no_trigger = engine.check_triggers(&bet, dec!(-15.0));
+        assert_eq!(no_trigger, None);
     }
 
     #[test]

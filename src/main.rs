@@ -536,6 +536,11 @@ async fn run_cycle(
 
     // 4-5. Edge detection → Kelly sizing → risk approval (via orchestrator)
     if let Some(d) = dash { *d.progress.write().await = EvaluationProgress::Selecting { markets_total: markets_scanned }; }
+    // Sync exposure counters to actual open positions before making new decisions.
+    // Without this, the risk manager's internal totals accumulate indefinitely
+    // (resolved/auto-exited positions are never subtracted), causing progressive
+    // rejection of new bets even when real exposure is well within limits.
+    orchestrator.sync_exposure_from_state(state);
     orchestrator.reset_cycle();
     let (approved_bets, decisions) = orchestrator.select_bets(&estimates, state, mana_bankroll);
     // decisions contains KellyRejected + RiskRejected + Selected — all edges

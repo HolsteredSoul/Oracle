@@ -61,6 +61,38 @@ impl StrategyOrchestrator {
         }
     }
 
+    /// Sync the risk manager's exposure counters to the current set of open bets.
+    ///
+    /// **Call this once per cycle, before `reset_cycle` and `select_bets`.**
+    ///
+    /// `RiskManager` only increments its internal counters (`total_exposure`,
+    /// `position_count`, `category_exposure`) when it approves a bet. It never
+    /// decrements them when positions resolve or are auto-exited. Without this
+    /// sync the counters drift upward indefinitely, progressively rejecting new
+    /// bets even when real exposure is well within limits.
+    ///
+    /// Because `TradeReceipt` does not store `MarketCategory`, all open
+    /// positions are bucketed under `Other` for the per-category check. This
+    /// is conservative: the category limit caps *all* exposure together rather
+    /// than per-domain. A future improvement should add `category` to
+    /// `TradeReceipt` and populate it at bet-placement time.
+    pub fn sync_exposure_from_state(&mut self, state: &crate::types::AgentState) {
+        use std::collections::HashMap;
+        use crate::types::MarketCategory;
+
+        let mut total = Decimal::ZERO;
+        let mut by_category: HashMap<MarketCategory, Decimal> = HashMap::new();
+
+        for bet in &state.open_bets {
+            total += bet.amount;
+            *by_category
+                .entry(MarketCategory::Other)
+                .or_insert(Decimal::ZERO) += bet.amount;
+        }
+
+        self.risk.update_exposure(total, by_category, state.open_bets.len());
+    }
+
     /// Reset per-cycle counters (call once at the start of every scan cycle).
     pub fn reset_cycle(&mut self) {
         self.risk.reset_cycle();
